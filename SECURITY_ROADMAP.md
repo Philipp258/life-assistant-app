@@ -121,13 +121,20 @@ covered by trust model, no change · **CHECK** = needs investigation.
   mechanism by design.
 - No change.
 
-## 13. Push notification payload trust — CHECK
-- `frontend/public/sw.js:21` — `event.data.json()` from push payload, builds
-  notification with `data.url`. SW navigates to URL on click after same-origin
-  check (`sw.js:48`).
-- Need to verify: only the backend's VAPID-signed push reaches the SW (Web
-  Push protocol enforces VAPID); confirm no path lets an arbitrary push
-  payload come in. Likely fine — quick check, then close.
+## 13. Push notification payload trust — CLOSED
+- Web Push protocol enforces VAPID signature + per-subscription
+  `p256dh`/`auth` encryption, so only the backend can deliver a
+  decryptable push payload to `frontend/public/sw.js`.
+- Earlier note "same-origin check (sw.js:48)" was wrong: that line is a
+  pathname-equality match used to focus an existing tab, not an origin
+  check. Real origin protection comes from `client.navigate(target)`
+  rejecting cross-origin per spec — but `self.clients.openWindow(target)`
+  (`sw.js:58`) will happily open absolute/protocol-relative URLs.
+- All current `schedule_notify(...)` callers pass server-built relative
+  paths (`/tasks/{id}`, `/chat`). Added `_safe_url(...)` guard in
+  `backend/app/notifications/service.py` that coerces any non-relative
+  payload `url` to `/` and logs a warning, so a future caller piping
+  user input into `url=` cannot smuggle an absolute URL into the SW.
 
 ## 14. WS payload XSS via Markdown — ACCEPT
 - `frontend/src/components/MarkdownView.tsx` uses `react-markdown` +

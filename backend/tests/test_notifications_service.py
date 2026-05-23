@@ -150,6 +150,48 @@ def test_notify_dedupe_skips_within_window(db_session, monkeypatch):
     assert len(calls) == 1
 
 
+def test_notify_passes_through_relative_url(db_session, monkeypatch):
+    _enable_vapid(monkeypatch)
+    _seed_sub(db_session)
+
+    from app.notifications import service
+
+    payloads: list[dict[str, Any]] = []
+    monkeypatch.setattr(service, "_send_one", lambda _s, p: payloads.append(dict(p)) or None)
+
+    asyncio.run(service.notify(event_type="t", title="T", body="B", url="/tasks/7?x=1"))
+
+    assert [p["url"] for p in payloads] == ["/tasks/7?x=1"]
+
+
+def test_notify_coerces_absolute_url(db_session, monkeypatch):
+    _enable_vapid(monkeypatch)
+    _seed_sub(db_session)
+
+    from app.notifications import service
+
+    payloads: list[dict[str, Any]] = []
+    monkeypatch.setattr(service, "_send_one", lambda _s, p: payloads.append(dict(p)) or None)
+
+    asyncio.run(service.notify(event_type="t", title="T", body="B", url="https://evil.com/x"))
+
+    assert [p["url"] for p in payloads] == ["/"]
+
+
+def test_notify_coerces_protocol_relative_url(db_session, monkeypatch):
+    _enable_vapid(monkeypatch)
+    _seed_sub(db_session)
+
+    from app.notifications import service
+
+    payloads: list[dict[str, Any]] = []
+    monkeypatch.setattr(service, "_send_one", lambda _s, p: payloads.append(dict(p)) or None)
+
+    asyncio.run(service.notify(event_type="t", title="T", body="B", url="//evil.com/x"))
+
+    assert [p["url"] for p in payloads] == ["/"]
+
+
 def test_notify_no_op_when_vapid_unconfigured(db_session, monkeypatch):
     from app.config import settings as _settings
 

@@ -217,6 +217,20 @@ def _send_one(subscription: PushSubscription, payload: PushPayload) -> int | Non
         return status if status is not None else 0
 
 
+def _safe_url(url: str) -> str:
+    """Coerce ``url`` to a same-origin relative path.
+
+    The SW invokes ``clients.openWindow(url)`` on notification click, which
+    happily opens absolute or protocol-relative URLs. Every caller today
+    passes a server-built relative path; this is a guard rail against a
+    future caller smuggling user input into the field.
+    """
+    if url.startswith("/") and not url.startswith("//"):
+        return url
+    logger.warning("notifications: rejecting non-relative url %r, coercing to '/'", url)
+    return "/"
+
+
 async def notify(
     *,
     event_type: str,
@@ -234,6 +248,7 @@ async def notify(
     """
     if not _vapid_ready():
         return
+    url = _safe_url(url)
     if quiet_if_session_id is not None and pubsub.subscriber_count(quiet_if_session_id) > 0:
         logger.debug(
             "notifications: suppressing %s for session %d (user is watching)",
