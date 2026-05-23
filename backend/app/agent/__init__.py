@@ -213,6 +213,11 @@ Computed kind (what the user sees in the UI; not stored on the row):
 Speak in the user's vocabulary: "I'll remind you Saturday" not "I created a task". "Routine running every morning". "Working on it" for jobs. "Noted, due Friday" for deadlines."""
 
 
+CORE_MEMORY_PROMPT = """\
+Never call `save_core_memory` without the user's explicit approval of the \
+change. Show the proposed body, get a clear yes, then write."""
+
+
 KNOWLEDGE_BLURB = """\
 ## Knowledge
 
@@ -418,6 +423,7 @@ def build_system_prompt(session_id: int | None, *, voice_mode: bool = False) -> 
         f"## Improving {name}\n\n{IMPROVE_ASSISTANT_PROMPT}",
         f"## About you\n\n{about}",
         f"## How to behave\n\n{behavior}",
+        f"## Core memory\n\n{CORE_MEMORY_PROMPT}",
         f"{KNOWLEDGE_BLURB}\n\n{tree_blob}",
     ]
     if task is not None:

@@ -64,9 +64,9 @@ def schedule(coro: Coroutine[Any, Any, None], *, label: str) -> None:
     except RuntimeError:
         pass
 
-    from app.chat import runner as chat_runner
+    from app.chat.runner.state import get_main_loop
 
-    main_loop = chat_runner._main_loop
+    main_loop = get_main_loop()
     if main_loop is None or main_loop.is_closed():
         logger.debug("notifications: no main loop, dropping %s", label)
         coro.close()
