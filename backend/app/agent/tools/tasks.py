@@ -97,8 +97,6 @@ def do_create_task(
     due_at: datetime | None = None,
     interval_unit: IntervalUnit | None = None,
     interval_count: int | None = None,
-    *,
-    creator_session_id: int | None = None,
 ) -> dict[str, Any]:
     # Ergonomics: if a unit was supplied but count wasn't, assume 1.
     if interval_unit is not None and interval_count is None:
@@ -113,12 +111,6 @@ def do_create_task(
         interval_unit=interval_unit,
         interval_count=interval_count,
     )
-    # `creator_session_id` no longer drives any subscription: the main
-    # session implicitly drains every task's terminal events
-    # (`app.chat.events`), so a task created from anywhere — main chat, a
-    # routine, recurrence, the improve-life-assistant sweep — surfaces to the user
-    # the same way. Kept on the signature as harmless provenance context.
-    _ = creator_session_id
     with SessionLocal() as session:
         try:
             task = service.create_task(session, data)
@@ -472,7 +464,6 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
           recurrence. Pass both together. Pass `do_at` alongside to
           anchor the first run.
         """
-        creator = ctx.deps.session_id if ctx.deps is not None else None
         return do_create_task(
             title=title,
             description=description,
@@ -482,7 +473,6 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
             due_at=due_at,
             interval_unit=interval_unit,
             interval_count=interval_count,
-            creator_session_id=creator,
         )
 
     @agent.tool_plain

@@ -1,24 +1,16 @@
-"""Default assistant routines, seeded at boot instead of via migrations.
+"""Default assistant routines, seeded at boot.
 
-These recurring assistant tasks used to be inserted by separate
-seed migrations (`a8c2f1e94b03` + `d1b6e8f04a52` reflection,
-`f3b71d6082a4` consolidation, `d8a4b9e017c5` improve-life-assistant
-collect / process, `b7e2d9f6a4c1` disk-space). Burying routine *content* in
-migrations meant every brief tweak was a new migration. The squash
-(`0001_baseline`) drops them; this module is the single, diffable home
-for the briefs, and `ensure_default_routines` is called from the
-FastAPI lifespan next to `ensure_user` / `get_or_create_main_session`.
+`ensure_default_routines` runs from the FastAPI lifespan (next to
+`ensure_user` / `get_or_create_main_session`) and materializes the
+recurring assistant tasks defined in this module.
 
 Idempotent by stable default key: once a routine key is materialized,
-`seeded_defaults` records it permanently. The routine's title and brief are
+`seeded_defaults` records it permanently. Title and brief become
 user-owned after creation; boot seeding never mutates or resurrects it.
 
-Scheduling note: the old reflection seed set `due_at` and left `do_at`
-NULL. `runner.should_start_task` treats `do_at IS NULL` as
-*eligible now*, so reproducing that on a fresh install would wake the
-routine immediately at first boot. All routines are seeded with a
-future `do_at` instead — the correct field for an assistant routine and
-consistent with the other four.
+Every routine is seeded with a future `do_at` (not just `due_at`):
+`runner.should_start_task` treats `do_at IS NULL` as eligible-now,
+which would wake the routine immediately at first boot.
 """
 
 from __future__ import annotations

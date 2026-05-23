@@ -8,7 +8,7 @@ it is wake-eligible. EVERY turn — a user message (over the WebSocket,
 `app.chat.ws`, which persists it then `schedule_wake`s), the autonomous
 task loop, a terminal-triggered main wake, watchdog recovery — comes
 through `wake_session` and serializes on the per-session lock
-(`_session_locks`). There is no separate streaming HTTP path anymore.
+(`_session_locks`).
 
 ## Assignee semantics
 
@@ -564,14 +564,13 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
 
     # pydantic-ai only auto-adds `@agent.system_prompt` for the very
     # first request of a fresh run; with `message_history` set (always,
-    # here) it would call the model with NO system prompt — wrong
-    # identity, no memory/tools guidance, no voice marker. The deleted
-    # POST path got this from the Vercel adapter's system-prompt
-    # reinjection. Mirror it by prepending a freshly built prompt. We do
-    # NOT strip existing SystemPromptParts: the stall reminder and task
-    # handoffs are deliberately SystemPromptPart-only ModelRequests and
-    # must survive (a capability with `replace_existing` would eat them
-    # and break the "history ends with a ModelRequest" invariant).
+    # here) it would call the model with no system prompt — wrong
+    # identity, no memory/tools guidance, no voice marker. Prepend a
+    # freshly built prompt instead. Do NOT strip existing
+    # SystemPromptParts: the stall reminder and task handoffs are
+    # deliberately SystemPromptPart-only ModelRequests and must survive
+    # (a capability with `replace_existing` would eat them and break the
+    # "history ends with a ModelRequest" invariant).
     history = [
         ModelRequest(
             parts=[SystemPromptPart(content=build_system_prompt(session_id, voice_mode=voice))]
@@ -779,8 +778,8 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
         # Atomic: persist the turn's reply AND advance the event cursor
         # in ONE transaction. Either both land or neither — so a crash /
         # reload / deploy mid-turn can never leave the reply persisted
-        # with the handoff un-cursored (which made the model re-answer
-        # it on the next wake).
+        # with the handoff un-cursored (which would re-drain it on the
+        # next wake and have the model answer it twice).
         run_result = agent_run.result
         silent = run_result is not None and isinstance(run_result.output, events.StaySilent)
         with SessionLocal() as db:

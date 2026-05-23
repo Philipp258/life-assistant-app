@@ -3,36 +3,29 @@
 A "terminal event" is the hidden `<task_handoff>` row a task records
 when it completes, blocks back to the user, or reschedules itself (see
 `app.chat.service.save_task_handoff`, written by the terminal task tools
-and the runner's stall/error escalations). It is the same payload the
-old separate "main-chat handoff" wake used — now it is just an event the
-main session drains on its next turn.
+and the runner's stall/error escalations). The main session drains
+these events on its next turn.
 
-There is no subscription graph anymore. The singleton main session
-*implicitly* drains every task-terminal event, so routine, recurrence,
-and improve-life-assistant-sweep tasks reach the user just like main-created ones.
 State is a single high-water cursor per consuming session
 (`ChatSession.event_cursor_id`): exactly-once and restart-safe because
 the cursor lives in the DB and only advances after a turn that actually
 saw the events.
 
-Shape: the drained handoffs are delivered as one synthetic *user-role*
+Shape: drained handoffs are delivered as one synthetic *user-role*
 report appended to the turn's history (context only — never persisted).
-A history that ends on a user turn is the normal, valid provider
-request shape, and — crucially — it gives the model an unambiguous
-"respond to THIS" target. The earlier tool-call/tool-return shape ended
-the history on a tool return after the prior assistant turn, which a
-model reads as "continue the conversation": on an autonomous wake (no
-real user message) it would re-answer the last thread *and* address the
-updates, duplicating a prior answer. The report is explicitly framed as
-not-from-the-user and "don't re-answer earlier conversation".
+Ending the history on a user turn is a valid provider request shape and
+gives the model an unambiguous "respond to THIS" target. The report is
+explicitly framed as not-from-the-user and "don't re-answer earlier
+conversation" so an autonomous wake addresses only these updates
+instead of continuing the prior thread.
 
 Silence: a drain turn runs with the `do_nothing` output tool
-(`SILENCE_OUTPUT`). Routine internal status (recurrence ticks, waits,
-reschedules, polling the user never asked to track) is noise — the model
-calls `do_nothing` to end the turn with no message, and `app.chat.runner`
-maps that to a cursor-only commit (no row, no push). It surfaces only
-what the user needs awareness of or a decision on; when genuinely unsure
-it surfaces rather than swallow.
+(`SILENCE_OUTPUT`). When the drained updates are routine internal
+status the user did not ask to track, the model calls `do_nothing` to
+end the turn with no message, and `app.chat.runner` maps that to a
+cursor-only commit (no row, no push). It surfaces only what the user
+needs awareness of or a decision on; when genuinely unsure it surfaces
+rather than swallow.
 """
 
 from __future__ import annotations

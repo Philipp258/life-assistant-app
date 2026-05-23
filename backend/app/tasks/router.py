@@ -56,14 +56,14 @@ def list_tasks(
 ) -> dict[str, Any]:
     """List tasks for the two-axis Tasks screen.
 
-    - no `done` → legacy slice (open-before-done) for old saved views.
+    - `done` omitted → open-before-done slice (used by saved views that
+      do not split on done state). `status` filter applies here.
     - `done=false` → open feed, last-activity order.
     - `done=true` → keyset-paginated done tail; response carries
       `next_cursor` (null when exhausted).
 
-    `status` is still accepted but only applies to the legacy slice — the
-    tri-tier inner grouping classifies scheduled/waiting client-side, so
-    the redesigned client no longer sends it.
+    The tri-tier inner grouping classifies scheduled/waiting client-side,
+    so `status` is unused on the `done=false` / `done=true` branches.
     """
     with SessionLocal() as session:
         if done is True:

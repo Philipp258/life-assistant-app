@@ -2,11 +2,8 @@
 
 A single WebSocket per browser tab, authenticated on upgrade with the
 same session cookie the REST routes use, multiplexing every chat session
-the client cares about. It replaces both halves of the old split: the
-per-turn streaming POST (`/api/chat/messages`) and the server-initiated
-SSE poke (`/api/chat/sessions/{id}/stream`). Every turn — a user-typed
-message or an autonomous/event wake — now reaches the client the same
-way.
+the client cares about. Every turn — a user-typed message or an
+autonomous/event wake — reaches the client through this channel.
 
 Wire protocol
 -------------
@@ -30,12 +27,12 @@ Up (client → server):
   an immediate snapshot (this *is* the connect/reconnect resync).
 - ``resync {session_id}`` — re-send the snapshot from the DB.
 - ``input {session_id, text, voice?}`` — persist the user message and
-  wake the session. No per-turn HTTP. A bare ``/<cmd>`` is run as a
-  slash command instead.
+  wake the session. A bare ``/<cmd>`` is run as a slash command
+  instead.
 - ``slash {session_id, name}`` — run a slash command.
 - ``cancel {session_id}`` — client-side stop for the live overlay. The
-  current runner is not cooperatively cancelled yet; its committed
-  result still reconciles via the next snapshot.
+  runner is not cooperatively cancelled yet; its committed result still
+  reconciles via the next snapshot.
 
 Correctness rests on the DB: the channel never carries authoritative
 content it invented. A dropped delta is irrelevant (the next snapshot
@@ -91,10 +88,10 @@ async def chat_ws(websocket: WebSocket) -> None:
     outgoing: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
     pumps: dict[int, asyncio.Task[None]] = {}
 
-    # Coalesce fallback change pokes into at most one DB snapshot per
-    # window. Most visible writes now flow as `message_upsert`; snapshot
-    # pokes remain for reset, legacy "message", and rows that fold into
-    # an existing UIMessage such as tool returns.
+    # Coalesce fallback change pokes (reset, "message", rows that fold
+    # into an existing UIMessage such as tool returns) into at most one
+    # DB snapshot per window. Visible writes that arrive as
+    # `message_upsert` bypass this.
     SNAPSHOT_COALESCE_S = 0.06
 
     async def pump(session_id: int) -> None:

@@ -438,9 +438,8 @@ async def aload_compacted_history(
     If the live history exceeds `compaction_trigger_tokens`, the older
     portion is summarized via the configured chat model and replaced
     with a single summary message row. Compacted rows are stamped with
-    `compacted_at` so they no longer feed into future loads, but stay
-    in the DB (still visible to the user, queryable for archival
-    tooling).
+    `compacted_at` so future loads exclude them, but they stay in the
+    DB (still visible to the user, queryable for archival tooling).
 
     Result: list of ModelMessages ready to pass as `message_history`.
     The cache prefix is stable between compaction events, so the
