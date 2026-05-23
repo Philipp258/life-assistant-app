@@ -16,6 +16,29 @@ real user would and write a report.
   PRs. The only writes you make are inside
   `release-test/reports/<RUN_ID>/`.
 
+## Credentials
+
+You will need three kinds of credentials during the run. None of them
+live in the project repo or on the fresh VPS — they are provided
+locally and you carry them in.
+
+- **App login password.** The installer prints a one-time generated
+  password to its own stdout on the line `Password: ...`. Capture the
+  full install transcript when you SSH-run it, parse out the password,
+  and use it whenever the app prompts you to sign in.
+- **Chat provider auth.** Read `release-test/.secrets/codex-auth.json`
+  and configure the Codex (ChatGPT subscription) provider in the app
+  with its contents. The UI takes the entire JSON blob as a single
+  `auth_json` value — paste it verbatim.
+- **Brave Search API key.** Read
+  `release-test/.secrets/keys.env` (simple `KEY=value` lines) and set
+  the Brave Search key in the app wherever provider/integration
+  settings expose it. Used by scenarios that need real web search.
+
+If `release-test/.secrets/` is missing or a key a scenario needs is
+absent, mark that scenario red with reason `missing credential: <key>`
+and continue with the next scenario that does not depend on it.
+
 ## Release-test mechanics (not part of any scenario)
 
 - If `.current-run` has `REF=<branch>`, every installer invocation must
