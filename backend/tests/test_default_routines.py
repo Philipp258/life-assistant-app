@@ -226,6 +226,9 @@ def test_brief_constants_are_the_final_seed_text(_test_db):
     """Guard the core routine-brief invariants that old migrations used to cover."""
     assert CONSOLIDATION_TITLE == "Daily consolidation"
     assert "harvest durable bits" in CONSOLIDATION_BRIEF
+    assert COLLECT_TITLE == "Collect improvement items"
+    assert "Each item becomes its own task" in COLLECT_BRIEF
+    assert "let the task triage" in COLLECT_BRIEF
 
 
 def test_briefs_do_not_hardcode_interval_windows():

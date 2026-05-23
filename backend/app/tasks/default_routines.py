@@ -75,6 +75,12 @@ For each genuine opportunity, create an improvement item whose description \
 stands alone: what happened, what was off, and why it matters. Avoid \
 speculative or vague "could be nicer" items.
 
+Each item becomes its own task that classifies the evidence and proposes a \
+change in the relevant surface (behavior, user fact, skill, or knowledge) \
+— or closes silently if it's an app bug, infrastructural, or doesn't \
+cleanly fit. Don't pre-classify here; file the moment and let the task \
+triage.
+
 Quiet cycle = zero items. Saying nothing is better than padding. \
 Call `complete_task` when done; the task auto-respawns for the next cycle.
 

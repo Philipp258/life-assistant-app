@@ -1,47 +1,63 @@
 ---
 name: improve-life-assistant
-description: Inside an improve-life-assistant task — turn improvement evidence into a confirmed, applied change to the assistant. Not for main chat.
+description: Inside an improve-life-assistant task — classify the evidence, propose a confirmed durable change in the right surface, and apply it. Not for main chat.
 ---
 
 # Improve the Assistant
 
-You are the runtime assistant inside a single improvement task. The task
-description is evidence only — what happened and why it matters, not a fix.
-Turn that evidence into the smallest durable change that improves future
-behavior without overfitting, get the user's go-ahead, and apply it.
+You are inside one improvement task. The description is evidence — what
+happened and what was off. Turn it into the smallest durable change that
+improves future behavior, get the user's go-ahead, and apply it.
 
-The collector is factual; you are opinionated. Form a view and
-recommend what you'd actually pick. Surface a choice only when the
-decision genuinely turns on the user's preference — don't punt a
-generic menu back to look thorough.
+## Classify first
 
-Read only what the evidence touches: core memory for behavior or user facts,
-knowledge notes for durable domain context, and skills for reusable
-procedures.
+Decide which surface the evidence actually points at:
 
-Pick the altitude before the surface. The same evidence can land as a
-narrow "when X do Y" rule, a broader principle, a commander's-intent
-concept, or persona-level behavior. A fresh special-case per incident
-is how the assistant accretes brittle rules — reach for the lowest
-altitude that actually generalizes the lesson. When your fix is
-narrow but the evidence smells like a broader pattern, say so and ask
-whether the higher-level repair is better.
+- **behavior** — the assistant's tone, style, length, format, when to ask
+  vs act, choice patterns.
+- **user-fact** — a durable fact about the user (role, projects,
+  environment, schedule, relationships).
+- **skill** — a procedure the assistant follows: new, edit, scope, or
+  remove. If the relevant skill lives under `backend/defaults/skills/`,
+  reclassify as `app-prompt` — defaults are read-only and only change by
+  deploy.
+- **knowledge** — domain context the assistant should know: new, edit,
+  scope, or remove.
+- **app-bug** — the app itself misbehaved: crash, broken flow, truncated
+  stream, missing feature, infrastructural glitch. Not something a
+  runtime memory change fixes.
+- **app-prompt** — the cause traces to a baked-in system prompt or default
+  skill that you can't edit at runtime.
+- **skip** — ambiguous evidence, one-off noise, or something already
+  contradicted by recent history.
 
-Then land it where it belongs: a behavior rule or preference and
-facts about the user in core memory, a domain note in knowledge, a
-genuinely reusable procedure as a skill.
+Genuinely consider the app classes before defaulting to a learnable surface.
+A lot of "the assistant did X wrong" moments are actually app bugs or
+wired-in prompt behavior, not memory gaps. Forcing those into behavior or
+knowledge ships brittle rules that paper over the real cause.
 
-When editing prompts or skills, write from the perspective of the agent that
-will read the text later. If the future reader is the runtime assistant, "you"
-means that assistant inside the app, with its tools and task/main-chat
-context. Avoid wording that accidentally addresses the coding agent changing
-the repo or the human reviewing the diff.
+App code lives under `backend/app/`, this is what powers you.
+`app-bug`, `app-prompt`, and `skip` all close the task with a short
+rationale and stop. No proposal, no user-facing surface. The rationale is
+useful future signal, so name what you suspected and why.
 
-Show the change as a diff before applying — exact before → after, no
-placeholders, no "something like…". A vague proposal the user can't
-eyeball was a recurring problem; a diff is the default unless the edit
-genuinely can't be shown that way. Apply only after the user agrees;
-core memory always needs explicit approval. Ground every proposal in
-the evidence; if nothing solid follows from it, close the task with a
-brief note instead of inventing something. Don't spawn sibling tasks —
-this one task handles this evidence.
+## Action for behavior / user-fact / skill / knowledge
+
+Read the current state of the surface you picked. Draft the actual change
+and show it to the user concretely — a diff or the exact new wording, not a
+paraphrase — and ask whether to apply.
+
+Evidence is concrete; the change usually shouldn't be. The default failure
+mode — and the thing that makes the assistant brittle over time — is
+encoding the specific case as a narrow rule ("don't suggest fish") instead
+of the principle behind it ("I prefer lighter meals"). By default, offer a
+few phrasings at different points on the ladder — raw incident → rule →
+principle → persona-level shift — and let the user pick. Drop levels that
+obviously don't fit; collapse to one option only when the others genuinely
+make no sense. Apply on go-ahead, drop on no, revise on edit.
+
+When editing a skill or knowledge note, write for the runtime assistant who
+will read it later — "you" means that assistant inside the app, not the
+human reviewing the change.
+
+Don't spawn sibling tasks; this one task handles this evidence.
