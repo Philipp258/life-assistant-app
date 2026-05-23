@@ -24,10 +24,7 @@ means the assistant's runtime agent.
 - `frontend/` — React 18 + Vite + TS + Tailwind, managed with `pnpm`.
   Tests via Vitest; some screens have Storybook stories.
 - `deploy/` — systemd units and install/update/backup scripts for the VPS.
-- `docs/cases/` — narrative product cases ("the thing the app should do
-  when…") rather than reference docs.
-- `evals/` — eval scripts that drive the deployed app via `agent-browser`.
-- `scripts/wtree.py` — git worktree + cmux workspace lifecycle for
+- `scripts/wtree.py` — git worktree + cmux workspace lifecycle for 
   parallel branches.
 
 ## Running things
@@ -49,21 +46,16 @@ Frontend, from `frontend/`:
 - `pnpm build`
 - `pnpm test`
 
-Choose local checks that match the files you changed. For docs-only
-changes, `git diff --check` is usually enough. For backend or frontend
-code, run the relevant commands above before pushing. Don't check, rerun,
-wait for, or require GitHub Actions/CI unless explicitly asked.
+Choose local checks that match the files you changed. 
 
 ## Style
 
 - Conventional Commits for commit and PR titles (`feat:`, `fix:`, `ci:`, …).
-- Python: ruff with line length 100, target py311. Don't fight the formatter.
+- Python: ruff with line length 100, target py311. 
 - TypeScript: `pnpm typecheck` is the source of truth.
-- Prefer editing existing files over creating new ones.
 - The app is mobile-only. Design and build for the phone viewport first;
   avoid desktop-only navigation patterns such as split panes or persistent
-  sidebars in production flows. Task/detail interactions should use normal
-  route transitions on mobile unless there is a strong product reason not to.
+  sidebars in production flows. 
 
 ## Gotchas
 
@@ -71,9 +63,6 @@ wait for, or require GitHub Actions/CI unless explicitly asked.
   sidecars), `data/core/`, `data/knowledge/`, user-installed
   `data/skills/`. Don't read or write `data/*.db*` directly — go through
   SQLAlchemy. Nothing under `data/` should be committed.
-- Default skills under `backend/defaults/skills/` are immutable. To
-  customize one, install a new skill under a different name; don't edit
-  the default in place.
 - Migrations live in `backend/alembic/versions/`. Keep them single-head.
 - `SESSION_SECRET` is required to boot — see `.env.example`.
 
@@ -99,17 +88,12 @@ Write prompts like you are briefing a capable teammate:
 - Assume the agent can make smart local decisions. Don't spell out obvious
   steps, available commands, or tool mechanics that are already visible
   from the environment.
-- Use rigid rules only when the behavior would otherwise be ambiguous,
-  risky, or expensive to get wrong.
+- Use rigid rules only when you are sure they are needed
 - Prefer a small example over a broad rule when the example communicates
   the pattern more clearly.
-- Keep skills the same way: explain when the skill applies, what context it
-  should use, and what good output looks like; avoid duplicating tool docs.
 
 Be precise about whose perspective the prompt is written from. A coding
 agent editing a prompt is outside the app; the runtime agent reading that
 prompt is inside the app with its own tools, memory, filesystem view, and
 user conversation. Write instructions for the agent that will actually read
-them. If a prompt says "you", it must mean that target agent, not the coding
-agent currently changing the file. When behavior depends on location, name
-the location explicitly instead of relying on a blurry "we".
+them. 
