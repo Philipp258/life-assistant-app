@@ -19,7 +19,6 @@ from app.agent.tools import chats as chat_tools
 from app.agent.tools import fs as fs_tools
 from app.agent.tools import knowledge as knowledge_tools
 from app.agent.tools import onboarding as onboarding_tools
-from app.agent.tools import self_update as self_update_tools
 from app.agent.tools import sessions as session_tools
 from app.agent.tools import settings as settings_tools
 from app.agent.tools import shell as shell_tools
@@ -486,7 +485,6 @@ def _build_agent() -> Agent[AgentDeps, str]:
     shell_tools.register(agent)
     fs_tools.register(agent)
     web_tools.register(agent)
-    self_update_tools.register(agent)
     settings_tools.register(agent)
     onboarding_tools.register(agent)
 

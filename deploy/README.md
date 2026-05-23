@@ -49,12 +49,12 @@ Once Life Assistant is reachable over HTTPS, the in-app setup flow can take over
 ## Self-update from chat
 
 Tell the assistant in chat: "deploy latest" (or anything that triggers the
-`self-update` skill). The agent calls the `self_update` tool, which runs
-`sudo systemctl start life-assistant-update.service`. The oneshot service runs
-`deploy/update.sh`: git pull, uv sync, alembic upgrade, frontend build,
-then `systemctl restart life-assistant`. Restart drops the listen socket for ~2s;
-the autonomous-task watchdog re-wakes any in-flight tasks on the new
-process.
+`self-update` skill). The agent reads the skill and runs
+`sudo systemctl start life-assistant-update.service` via `bash` in a task chat.
+The oneshot service runs `deploy/update.sh`: git pull, uv sync, alembic
+upgrade, frontend build, then `systemctl restart life-assistant`. Restart
+drops the listen socket for ~2s; the autonomous-task watchdog re-wakes any
+in-flight tasks on the new process.
 
 ## Manual update
 

@@ -1,48 +1,22 @@
 ---
 name: self-update
-description: Deploy the latest Life Assistant code to the VPS - pulls main, rebuilds, restarts. Use when the user says "deploy", "ship it", "update yourself", or "pull latest".
+description: Deploy latest main to the VPS by triggering the update systemd oneshot.
 ---
 
 # Self-update
 
-Life Assistant can redeploy itself by triggering the `life-assistant-update.service`
-systemd unit on the VPS. The `self_update` tool is the interface; use this
-skill when the user wants the live app to pick up already-merged code.
+Life Assistant ships its own updates: a systemd oneshot runs `deploy/update.sh`
+(git pull → build → restart) on the VPS.
 
-## When to use
+Run:
 
-- User says: "deploy", "ship it", "pull latest", "update yourself",
-  "redeploy", "restart with new code".
-- After the user merges a PR they want live.
+```
+sudo /usr/bin/systemctl start life-assistant-update.service
+```
 
-## When NOT to use
+The command returns immediately; the oneshot takes ~30–60s and kills this
+process partway through the restart. In-flight assistant tasks resume on the
+next boot via the watchdog.
 
-- Local dev (`make dev`). The tool refuses outside systemd anyway, but
-  don't pretend you're going to deploy when you can't.
-- Mid-task on something fragile. A restart drops the listen socket for
-  ~2s; SSE clients reconnect, but if you're in the middle of a critical
-  multi-step run, finish first.
-
-## How
-
-Call `self_update()`. It returns immediately with
-`{ok: true, message: ...}` once systemctl has accepted the start. The
-actual work (git pull, uv sync, alembic migrate, pnpm build, restart)
-takes 30-60s and runs in a separate oneshot service. Life Assistant's process
-gets killed during the restart and comes back on the new code.
-
-In-flight autonomous tasks survive — `app.main` lifespan re-wakes them
-on the next boot.
-
-## What if it fails
-
-- `{ok: false, reason: "not running under systemd..."}` — you're in dev.
-  Tell the user, suggest manual `git pull && make dev`.
-- `{ok: false, reason: "systemctl exited N"}` — sudoers entry missing
-  or the unit file isn't installed. Surface the stderr to the user.
-
-## After deploying
-
-If you are still running after the restart, verify with `/api/health` (no auth
-required) or ask the user to refresh. If something looks broken, propose a
-rollback before running one.
+VPS only — `make dev` has no such unit. If the unit isn't installed, surface
+the systemctl error to the user instead of retrying.
