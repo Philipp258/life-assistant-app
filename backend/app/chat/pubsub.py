@@ -7,6 +7,16 @@ Used for:
 - SSE clients tailing a session's stream
 - Cross-session event injection (subscribers see target events) — Phase 7
 - Wake-up triggers for the autonomous task-chat runner — Phase 6
+
+The event payload is typed `dict[str, Any]` rather than a discriminated
+union because the wire grammar spans ~10 event shapes (snapshot, message
+upsert/delete, runner_started/finished, part_delta, message_start,
+messages_changed, task_upsert/delete, …) each published from a different
+call site and consumed by both the WebSocket sender (which forwards
+verbatim) and `app.chat.runner` (which inspects only a handful of
+`type` values). Forcing every producer to import a TypedDict union
+would couple the schema definition to every publisher without preventing
+the actual risk (a misspelled key) any better than a runtime test.
 """
 
 from __future__ import annotations

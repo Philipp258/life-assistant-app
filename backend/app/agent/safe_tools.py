@@ -93,6 +93,13 @@ def install(agent: Agent[Any, Any]) -> None:
     orig_tool_plain = agent.tool_plain
 
     def _patched(orig: Callable[..., Any]) -> Callable[..., Any]:
+        # `func: Any` because pydantic-ai's `@agent.tool` is dual-use:
+        # called as `@agent.tool` it receives the function directly, and
+        # called as `@agent.tool(...)` it receives kwargs first and the
+        # function on a later call. The union type would be
+        # `Callable[..., Any] | None`, but the schema-introspection path
+        # accepts arbitrary callables — so we accept Any and dispatch
+        # on `is None`.
         def patched(func: Any = None, /, **kwargs: Any) -> Any:
             if func is None:
                 # Used as `@agent.tool(...)` — first call returns the real decorator.
@@ -109,6 +116,6 @@ def install(agent: Agent[Any, Any]) -> None:
 
         return patched
 
-    agent.tool = _patched(orig_tool)  # type: ignore[method-assign]
-    agent.tool_plain = _patched(orig_tool_plain)  # type: ignore[method-assign]
-    agent._life_assistant_safe_tools_installed = True  # type: ignore[attr-defined]
+    agent.tool = _patched(orig_tool)  # type: ignore[method-assign] -- monkey-patching pydantic-ai Agent decorator
+    agent.tool_plain = _patched(orig_tool_plain)  # type: ignore[method-assign] -- monkey-patching pydantic-ai Agent decorator
+    agent._life_assistant_safe_tools_installed = True  # type: ignore[attr-defined] -- install-sentinel; idempotency guard above reads it back

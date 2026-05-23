@@ -31,20 +31,20 @@ rather than swallow.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any
 
 from pydantic import BaseModel
 from pydantic_ai import ToolOutput
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
+    SystemPromptPart,
     UserPromptPart,
 )
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.chat.models import ChatSession, Message
-from app.chat.service import extract_task_handoff_text
+from app.chat.service import extract_task_handoff_text, parse_message
 from app.chat.session_policy import consumes_terminal_events
 from app.tasks.models import Task
 
@@ -74,18 +74,13 @@ SILENCE_OUTPUT = ToolOutput(
 
 def _handoff_text_from_row(row: Message) -> str | None:
     """Pull the handoff body out of a persisted message row, if it is one."""
-    raw: dict[str, Any] = row.parts_json if isinstance(row.parts_json, dict) else {}
-    parts = raw.get("parts", []) or []
-    for part in parts:
-        if not isinstance(part, dict):
+    msg = parse_message(row)
+    if msg is None:
+        return None
+    for part in msg.parts:
+        if not isinstance(part, SystemPromptPart):
             continue
-        kind = part.get("part_kind") or part.get("kind")
-        if kind not in ("system-prompt", "SystemPromptPart"):
-            continue
-        content = part.get("content")
-        if not isinstance(content, str):
-            continue
-        handoff = extract_task_handoff_text(content)
+        handoff = extract_task_handoff_text(part.content)
         if handoff is not None:
             return handoff
     return None

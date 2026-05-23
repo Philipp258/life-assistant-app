@@ -26,6 +26,15 @@ from datetime import datetime
 from typing import Any
 
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    RetryPromptPart,
+    TextPart,
+    ToolCallPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from sqlalchemy import func, select
 
 from app.agent.deps import AgentDeps
@@ -41,50 +50,44 @@ from app.tasks.schemas import TaskUpdate
 _TOOL_RETURN_PREVIEW_CHARS = 200
 
 
-def flatten_parts(parts: list[dict[str, Any]]) -> str:
+def flatten_parts(message: ModelMessage) -> str:
     """Render pydantic-ai message parts as a single readable text blob.
 
     Tool calls/returns are shown as one-liners so the agent can see *that*
     a tool ran without drowning in JSON. Tool returns are truncated.
     """
     chunks: list[str] = []
-    for part in parts:
-        kind = part.get("part_kind")
-        if kind in ("text", "user-prompt"):
-            content = part.get("content")
+    for part in message.parts:
+        if isinstance(part, (TextPart, UserPromptPart)):
+            content = part.content
             if content:
                 chunks.append(str(content))
-        elif kind == "tool-call":
-            name = part.get("tool_name", "?")
-            args = part.get("args", "")
+        elif isinstance(part, ToolCallPart):
             # Keep this deliberately non-XML/non-control-looking. These
             # transcript strings are context for the agent, and may be
             # summarized or quoted in a later user-facing answer. A prior
             # angle-bracket form (`<tool_call: update_task(...)>`) leaked
             # verbatim into main chat and looked like executable internal
             # syntax. Use plain prose so accidental copying is harmless.
-            chunks.append(f"Internal tool call recorded: {name}; args: {args}")
-        elif kind == "tool-return":
-            name = part.get("tool_name", "?")
-            content = part.get("content", "")
-            text = str(content)
+            chunks.append(f"Internal tool call recorded: {part.tool_name}; args: {part.args or ''}")
+        elif isinstance(part, ToolReturnPart):
+            text = str(part.content or "")
             if len(text) > _TOOL_RETURN_PREVIEW_CHARS:
                 text = text[:_TOOL_RETURN_PREVIEW_CHARS] + "…"
-            chunks.append(f"Internal tool result recorded: {name}; preview: {text}")
-        elif kind == "retry-prompt":
-            content = part.get("content", "")
-            chunks.append(f"Internal retry prompt recorded: {content}")
-        # system-prompt parts are skipped on purpose — irrelevant for
-        # cross-session reading and noisy.
+            chunks.append(f"Internal tool result recorded: {part.tool_name}; preview: {text}")
+        elif isinstance(part, RetryPromptPart):
+            chunks.append(f"Internal retry prompt recorded: {part.content or ''}")
+        # SystemPromptPart, ThinkingPart, etc. are skipped on purpose —
+        # irrelevant for cross-session reading and noisy.
     return "\n".join(c for c in chunks if c)
 
 
-def role_for(kind: str, parts: list[dict[str, Any]]) -> str:
-    if kind == "request":
-        for p in parts:
-            if p.get("part_kind") == "user-prompt":
+def role_for(message: ModelMessage) -> str:
+    if isinstance(message, ModelRequest):
+        for p in message.parts:
+            if isinstance(p, UserPromptPart):
                 return "user"
-            if p.get("part_kind") == "tool-return":
+            if isinstance(p, ToolReturnPart):
                 return "tool"
         return "user"
     return "assistant"
@@ -129,16 +132,17 @@ def do_list_chat_messages(
             .limit(safe_limit)
         ).all()
 
+    from app.chat.service import parse_message
+
     items: list[dict[str, Any]] = []
     for row in rows:
-        raw: dict[str, Any] = row.parts_json if isinstance(row.parts_json, dict) else {}
-        parts = raw.get("parts", []) or []
+        msg = parse_message(row)
         items.append(
             {
                 "id": row.id,
                 "kind": row.kind,
-                "role": role_for(row.kind, parts),
-                "text": flatten_parts(parts),
+                "role": role_for(msg) if msg is not None else "user",
+                "text": flatten_parts(msg) if msg is not None else "",
                 "created_at": serialize_utc(row.created_at),
             }
         )
@@ -219,15 +223,16 @@ def do_read_main_chat_recent(limit: int = 20) -> list[dict[str, Any]]:
         )
         rows = list(session.scalars(stmt).all())
 
+    from app.chat.service import parse_message
+
     rows.reverse()  # latest N, returned oldest-first
     out: list[dict[str, Any]] = []
     for row in rows:
-        raw: dict[str, Any] = row.parts_json if isinstance(row.parts_json, dict) else {}
-        parts = raw.get("parts", []) or []
+        msg = parse_message(row)
         out.append(
             {
-                "role": role_for(row.kind, parts),
-                "text": flatten_parts(parts),
+                "role": role_for(msg) if msg is not None else "user",
+                "text": flatten_parts(msg) if msg is not None else "",
                 "created_at": serialize_utc(row.created_at),
             }
         )

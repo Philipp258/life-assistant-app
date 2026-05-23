@@ -4,6 +4,8 @@ import concurrent.futures
 import re
 from typing import Any
 
+from pydantic_ai.settings import ModelSettings
+
 from app.agent import get_agent
 
 # Common pictographic Unicode emoji blocks. Tight enough to skip digits,
@@ -45,7 +47,7 @@ def _run_llm(prompt: str, *, timeout_s: float) -> str:
 
     def _call() -> str:
         # Constrain output — we'll truncate downstream anyway.
-        result = agent.run_sync(prompt, model_settings={"max_tokens": 8})  # type: ignore[arg-type]
+        result = agent.run_sync(prompt, model_settings=ModelSettings(max_tokens=8))
         return result.output or ""
 
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)

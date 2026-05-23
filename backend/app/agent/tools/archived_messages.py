@@ -31,7 +31,7 @@ from sqlalchemy import or_, select
 from app.agent.deps import AgentDeps
 from app.agent.tools.chats import flatten_parts, role_for
 from app.chat.models import Message
-from app.chat.service import get_or_create_main_session
+from app.chat.service import get_or_create_main_session, parse_message
 from app.datetime_utils import normalize_to_naive_utc, serialize_utc
 from app.db import SessionLocal
 
@@ -45,13 +45,12 @@ def _archive_reason(row: Message) -> str:
 
 
 def _render_row(row: Message) -> dict[str, Any]:
-    raw: dict[str, Any] = row.parts_json if isinstance(row.parts_json, dict) else {}
-    parts = raw.get("parts", []) or []
+    msg = parse_message(row)
     return {
         "id": row.id,
         "kind": row.kind,
-        "role": role_for(row.kind, parts),
-        "text": flatten_parts(parts),
+        "role": role_for(msg) if msg is not None else "user",
+        "text": flatten_parts(msg) if msg is not None else "",
         "created_at": serialize_utc(row.created_at),
         "archived_via": _archive_reason(row),
         "archived_at": serialize_utc(row.archived_at),

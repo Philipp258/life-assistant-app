@@ -8,9 +8,9 @@ identical turn-to-turn (cache hit); a compaction event invalidates the
 cache once.
 
 Trigger is token-based: when the persisted history exceeds a threshold
-(~80k tokens) the older portion is summarized via the configured Z.AI
-chat model. Recent message groups are kept verbatim so the model can
-react to the live thread without lossy paraphrase.
+(~80k tokens) the older portion is summarized. Recent message groups are
+kept verbatim so the model can react to the live thread without lossy
+paraphrase.
 """
 
 from __future__ import annotations
@@ -18,18 +18,21 @@ from __future__ import annotations
 import inspect
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any
 
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
+    ModelRequestPart,
     ModelResponse,
+    ModelResponsePart,
     SystemPromptPart,
     TextPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
 )
+
+_MessagePart = ModelRequestPart | ModelResponsePart
 
 
 # Character-to-token ratio for English-with-code prose. Slightly
@@ -89,14 +92,14 @@ def estimate_tokens(messages: Sequence[ModelMessage]) -> int:
     return total
 
 
-def _part_tokens(part: Any) -> int:
+def _part_tokens(part: _MessagePart) -> int:
     text = _part_text(part)
     if not text:
         return 0
     return max(1, len(text) // _CHARS_PER_TOKEN)
 
 
-def _part_text(part: Any) -> str:
+def _part_text(part: _MessagePart) -> str:
     """Best-effort text extraction. Used for both token estimation and
     summarizer input rendering."""
     if isinstance(part, TextPart):
@@ -222,7 +225,7 @@ def messages_to_text(messages: Sequence[ModelMessage], *, tool_output_truncate: 
     return "\n\n".join(lines)
 
 
-def _render_part(part: Any, *, tool_output_truncate: int) -> str:
+def _render_part(part: _MessagePart, *, tool_output_truncate: int) -> str:
     if isinstance(part, SystemPromptPart):
         return f"[System]\n{part.content}".strip()
     if isinstance(part, UserPromptPart):

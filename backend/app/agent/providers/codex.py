@@ -17,12 +17,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncGenerator, Generator
 
 import httpx
-from typing_extensions import override
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, Omit
+from openai.types import responses
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse
+from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.openai import OpenAIResponsesModel, OpenAIResponsesModelSettings
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.settings import ModelSettings
+from typing_extensions import override
 
 from app.agent.providers.codex_auth import (
     CodexSession,
@@ -75,7 +80,9 @@ class _CodexAuth(httpx.Auth):
             log.exception("Codex token persist callback failed; refresh will retry next cycle.")
 
     @override
-    async def async_auth_flow(self, request: httpx.Request):
+    async def async_auth_flow(
+        self, request: httpx.Request
+    ) -> AsyncGenerator[httpx.Request, httpx.Response]:
         session = await self._ensure_fresh()
         request.headers["Authorization"] = f"Bearer {session.access_token}"
         if session.account_id:
@@ -84,7 +91,9 @@ class _CodexAuth(httpx.Auth):
         yield request
 
     @override
-    def sync_auth_flow(self, request: httpx.Request):  # pragma: no cover
+    def sync_auth_flow(
+        self, request: httpx.Request
+    ) -> Generator[httpx.Request, httpx.Response, None]:  # pragma: no cover
         raise RuntimeError("Codex auth is async-only; openai SDK is async here.")
 
 
@@ -106,7 +115,13 @@ class _CodexResponsesModel(OpenAIResponsesModel):
        (chat router, autonomous runner, tests) sends a streamed POST.
     """
 
-    async def _map_messages(self, messages, model_settings, model_request_parameters):  # type: ignore[override]
+    @override
+    async def _map_messages(
+        self,
+        messages: list[ModelMessage],
+        model_settings: OpenAIResponsesModelSettings,
+        model_request_parameters: ModelRequestParameters,
+    ) -> tuple[str | Omit, list[responses.ResponseInputItemParam]]:
         instructions, openai_messages = await super()._map_messages(
             messages, model_settings, model_request_parameters
         )
@@ -127,7 +142,13 @@ class _CodexResponsesModel(OpenAIResponsesModel):
                 instructions = _CODEX_DEFAULT_INSTRUCTIONS
         return instructions, openai_messages
 
-    async def request(self, messages, model_settings, model_request_parameters):  # type: ignore[override]
+    @override
+    async def request(
+        self,
+        messages: list[ModelRequest | ModelResponse],
+        model_settings: ModelSettings | None,
+        model_request_parameters: ModelRequestParameters,
+    ) -> ModelResponse:
         async with self.request_stream(
             messages, model_settings, model_request_parameters
         ) as stream:

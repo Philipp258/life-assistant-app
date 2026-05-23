@@ -132,7 +132,11 @@ def list_skills() -> list[SkillMeta]:
 def read_skill(name: str) -> Skill:
     """Read a single skill by name. Defaults take priority over user copies."""
     _validate_name(name)
-    for source, root in (("default", DEFAULTS_SKILLS_DIR), ("user", SKILLS_DIR)):
+    sources: tuple[tuple[SkillSource, Path], ...] = (
+        ("default", DEFAULTS_SKILLS_DIR),
+        ("user", SKILLS_DIR),
+    )
+    for source, root in sources:
         p = root / name / "SKILL.md"
         if not p.is_file():
             continue
@@ -143,7 +147,7 @@ def read_skill(name: str) -> Skill:
             description=meta.get("description") or "",
             path=_rel_path(p),
             body=body,
-            source=source,  # type: ignore[arg-type]
+            source=source,
         )
     raise SkillError(f"skill not found: {name!r}")
 

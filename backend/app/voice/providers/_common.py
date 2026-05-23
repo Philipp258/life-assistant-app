@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +34,6 @@ def sanitize_provider_error(
     *,
     status_code: int,
     body: str,
-    headers: Any = None,
     action: str = "transcription",
 ) -> str:
     """Return a concise, UI-safe error string for an upstream HTTP failure.
@@ -95,8 +93,13 @@ def audio_format_for_input(
     return default
 
 
-def extract_openai_text(payload: Any) -> str:
-    """Pull the text out of an OpenAI-style chat completion response."""
+def extract_openai_text(payload: object) -> str:
+    """Pull the text out of an OpenAI-style chat completion response.
+
+    `payload` is the parsed JSON body of a third-party HTTP response, so
+    its shape is genuinely dynamic — we defensively isinstance-check
+    every layer rather than trusting a static schema.
+    """
     if not isinstance(payload, dict):
         return ""
     choices = payload.get("choices")

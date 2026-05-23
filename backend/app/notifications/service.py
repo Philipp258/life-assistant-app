@@ -30,7 +30,7 @@ import logging
 import time
 from pathlib import Path
 from collections.abc import Coroutine
-from typing import Any
+from typing import Any, TypedDict
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -179,7 +179,15 @@ def _check_dedupe(key: str | None) -> bool:
     return False
 
 
-def _send_one(subscription: PushSubscription, payload: dict[str, Any]) -> int | None:
+class PushPayload(TypedDict):
+    title: str
+    body: str
+    url: str
+    event_type: str
+    tag: str
+
+
+def _send_one(subscription: PushSubscription, payload: PushPayload) -> int | None:
     """Send one push. Returns HTTP status on transport failure, None on success.
 
     Hidden import so `pywebpush` is only required when push is actually
@@ -237,7 +245,7 @@ async def notify(
         logger.debug("notifications: deduped %s (key=%s)", event_type, dedupe_key)
         return
 
-    payload = {
+    payload: PushPayload = {
         "title": title,
         "body": body,
         "url": url,

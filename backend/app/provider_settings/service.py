@@ -141,6 +141,9 @@ def pick_chat(db: Session) -> ChatPick:
         )
 
     preferred = row.preferred_chat_provider
+    # `preferred in configured` proves `preferred` is one of the four
+    # ChatProvider literals at runtime, but pyrefly does not narrow
+    # `str` through `in set[Literal]`; the cast records the proof.
     if preferred is not None and preferred in configured:
         return _build_chat_pick(row, cast(ChatProvider, preferred))
 

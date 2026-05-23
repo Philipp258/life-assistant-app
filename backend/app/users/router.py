@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Literal
 
 from fastapi import APIRouter
+from pydantic import BaseModel
 
 from app.knowledge.identity import resolve_assistant_name
 from app.provider_settings.service import is_chat_configured as provider_is_configured
@@ -20,6 +21,12 @@ from app.users.service import is_onboarding
 OnboardingState = Literal["needs_provider", "needs_chat", "done"]
 
 router = APIRouter(tags=["users"])
+
+
+class IdentityOut(BaseModel):
+    assistant_name: str
+    is_onboarding: bool
+    onboarding_state: OnboardingState
 
 
 def _onboarding_state() -> OnboardingState:
@@ -31,10 +38,10 @@ def _onboarding_state() -> OnboardingState:
 
 
 @router.get("/identity")
-def identity() -> dict[str, object]:
+def identity() -> IdentityOut:
     state = _onboarding_state()
-    return {
-        "assistant_name": resolve_assistant_name(),
-        "is_onboarding": state != "done",
-        "onboarding_state": state,
-    }
+    return IdentityOut(
+        assistant_name=resolve_assistant_name(),
+        is_onboarding=state != "done",
+        onboarding_state=state,
+    )

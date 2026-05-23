@@ -7,6 +7,9 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.responses import Response
+from starlette.types import Scope
+from typing_extensions import override
 
 from app.auth.middleware import SessionAuthMiddleware
 from app.auth.router import router as auth_router
@@ -212,7 +215,8 @@ _MEDIA_TYPE_OVERRIDES = {
 
 
 class _ImmutableStaticFiles(StaticFiles):
-    async def get_response(self, path, scope):  # type: ignore[override]
+    @override
+    async def get_response(self, path: str, scope: Scope) -> Response:
         response = await super().get_response(path, scope)
         if response.status_code == 200:
             response.headers["Cache-Control"] = _IMMUTABLE_CACHE

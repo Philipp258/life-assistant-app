@@ -45,9 +45,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from fastapi import WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 
 from app.chat import commands, pubsub, runner
@@ -56,6 +57,41 @@ from app.datetime_utils import utc_now
 from app.db import SessionLocal
 
 logger = logging.getLogger(__name__)
+
+
+class _SubscribeFrame(BaseModel):
+    type: Literal["subscribe"]
+    session_ids: list[int] = Field(default_factory=list)
+
+
+class _ResyncFrame(BaseModel):
+    type: Literal["resync"]
+    session_id: int
+
+
+class _InputFrame(BaseModel):
+    type: Literal["input"]
+    session_id: int
+    text: str
+    voice: bool = False
+
+
+class _SlashFrame(BaseModel):
+    type: Literal["slash"]
+    session_id: int
+    name: str
+
+
+class _CancelFrame(BaseModel):
+    type: Literal["cancel"]
+    session_id: int
+
+
+_InboundFrame = Annotated[
+    _SubscribeFrame | _ResyncFrame | _InputFrame | _SlashFrame | _CancelFrame,
+    Field(discriminator="type"),
+]
+_INBOUND_ADAPTER: TypeAdapter[_InboundFrame] = TypeAdapter(_InboundFrame)
 
 # Custom WebSocket close code for an unauthenticated upgrade. 4000-4999
 # is the application-private range; mirrors the REST 401.
@@ -102,13 +138,20 @@ async def chat_ws(websocket: WebSocket) -> None:
         snapshot — idempotent on the client)."""
         async with pubsub.subscribe(session_id) as queue:
             await outgoing.put(_snapshot(session_id))
-            state: dict[str, Any] = {"dirty": False, "flush": None}
+            # `state` is a 1-element list because the coalesced-snapshot
+            # closure mutates the in-flight task handle and the dirty
+            # flag, and Python closures cannot rebind outer locals from
+            # inside a nested function without `nonlocal` on every
+            # mutation site. Wrapping both in a small object would also
+            # work; the list keeps the call sites short.
+            dirty: list[bool] = [False]
+            flush: list[asyncio.Task[None] | None] = [None]
 
             async def _coalesced_snapshot() -> None:
                 try:
                     await asyncio.sleep(SNAPSHOT_COALESCE_S)
-                    if state["dirty"]:
-                        state["dirty"] = False
+                    if dirty[0]:
+                        dirty[0] = False
                         await outgoing.put(_snapshot(session_id))
                 except asyncio.CancelledError:
                     pass
@@ -118,10 +161,10 @@ async def chat_ws(websocket: WebSocket) -> None:
                     event = await queue.get()
                     etype = event.get("type")
                     if etype in ("messages_changed", "message", "reset"):
-                        state["dirty"] = True
-                        flush = state["flush"]
-                        if flush is None or flush.done():
-                            state["flush"] = asyncio.create_task(_coalesced_snapshot())
+                        dirty[0] = True
+                        in_flight = flush[0]
+                        if in_flight is None or in_flight.done():
+                            flush[0] = asyncio.create_task(_coalesced_snapshot())
                     else:
                         # runner_finished must arrive AFTER the turn's
                         # authoritative snapshot — clients (and the WS
@@ -131,17 +174,17 @@ async def chat_ws(websocket: WebSocket) -> None:
                         # events (`message_upsert`, runner_started,
                         # message_start, part_delta) are forwarded
                         # immediately.
-                        if etype == "runner_finished" and state["dirty"]:
-                            state["dirty"] = False
-                            flush = state["flush"]
-                            if flush is not None and not flush.done():
-                                flush.cancel()
+                        if etype == "runner_finished" and dirty[0]:
+                            dirty[0] = False
+                            in_flight = flush[0]
+                            if in_flight is not None and not in_flight.done():
+                                in_flight.cancel()
                             await outgoing.put(_snapshot(session_id))
                         await outgoing.put(event)
             finally:
-                flush = state["flush"]
-                if flush is not None and not flush.done():
-                    flush.cancel()
+                in_flight = flush[0]
+                if in_flight is not None and not in_flight.done():
+                    in_flight.cancel()
 
     async def sender() -> None:
         while True:
@@ -151,34 +194,21 @@ async def chat_ws(websocket: WebSocket) -> None:
         if session_id not in pumps:
             pumps[session_id] = asyncio.create_task(pump(session_id))
 
-    def _sid(data: dict[str, Any]) -> int | None:
-        try:
-            return int(data["session_id"])
-        except (KeyError, TypeError, ValueError):
-            return None
-
-    async def _handle(data: dict[str, Any]) -> None:
+    async def _handle(frame: _InboundFrame) -> None:
         """One inbound frame. Raising here must never kill the socket —
         the caller logs and keeps the connection alive."""
-        mtype = data.get("type")
+        if isinstance(frame, _SubscribeFrame):
+            for sid in frame.session_ids:
+                _ensure_pump(sid)
+            return
 
-        if mtype == "subscribe":
-            for raw in data.get("session_ids", []) or []:
-                try:
-                    _ensure_pump(int(raw))
-                except (TypeError, ValueError):
-                    continue
+        if isinstance(frame, _ResyncFrame):
+            await outgoing.put(_snapshot(frame.session_id))
+            return
 
-        elif mtype == "resync":
-            sid = _sid(data)
-            if sid is not None:
-                await outgoing.put(_snapshot(sid))
-
-        elif mtype == "input":
-            sid = _sid(data)
-            if sid is None:
-                return
-            text = (data.get("text") or "").strip()
+        if isinstance(frame, _InputFrame):
+            sid = frame.session_id
+            text = frame.text.strip()
             if not text:
                 return
             cmd_name = commands.parse_command(text)
@@ -196,15 +226,15 @@ async def chat_ws(websocket: WebSocket) -> None:
                     sid,
                     [ModelRequest(parts=[UserPromptPart(content=text, timestamp=utc_now())])],
                 )
-            runner.set_pending_voice(sid, bool(data.get("voice")))
+            runner.set_pending_voice(sid, frame.voice)
             runner.schedule_wake(sid)
+            return
 
-        elif mtype == "slash":
-            sid = _sid(data)
-            if sid is None or not _session_exists(sid):
+        if isinstance(frame, _SlashFrame):
+            sid = frame.session_id
+            if not _session_exists(sid):
                 return
-            name = data.get("name")
-            cmd = commands.get(name) if isinstance(name, str) else None
+            cmd = commands.get(frame.name)
             if cmd is not None:
                 # Slash handlers are quick DB stamps (e.g. /new archives
                 # rows). Run inline; a slow handler would briefly block
@@ -212,24 +242,26 @@ async def chat_ws(websocket: WebSocket) -> None:
                 # single-user scale.
                 with SessionLocal() as db:
                     cmd.handler(db, sid)
-
-        elif mtype == "cancel":
-            # v1 stop is a client-side overlay cancel. The runner keeps
-            # going and its committed result reconciles through the DB
-            # snapshot path. Real cooperative cancellation can be added
-            # separately without changing the external-store ownership.
             return
+
+        # _CancelFrame: v1 stop is a client-side overlay cancel. The
+        # runner keeps going and its committed result reconciles through
+        # the DB snapshot path. Real cooperative cancellation can be
+        # added separately without changing the external-store ownership.
 
     send_task = asyncio.create_task(sender())
     try:
         while True:
-            data = await websocket.receive_json()
-            if not isinstance(data, dict):
+            raw = await websocket.receive_json()
+            try:
+                frame = _INBOUND_ADAPTER.validate_python(raw)
+            except ValidationError as exc:
+                logger.debug("chat.ws: dropping invalid frame: %s", exc)
                 continue
             try:
-                await _handle(data)
+                await _handle(frame)
             except Exception:
-                logger.exception("chat.ws: frame handling failed: %r", data.get("type"))
+                logger.exception("chat.ws: frame handling failed: %s", frame.type)
     except WebSocketDisconnect:
         pass
     except Exception:

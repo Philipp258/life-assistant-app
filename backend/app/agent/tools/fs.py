@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from pydantic_ai import Agent
 
@@ -19,6 +19,13 @@ from app.agent.deps import AgentDeps
 from app.agent.tools._paging import normalize_page, paginate
 from app.agent.tools._task_scope import only_in_task_chat
 from app.config import DEFAULTS_SKILLS_DIR, REPO_ROOT
+
+
+class GrepMatch(TypedDict):
+    path: str
+    line: int
+    text: str
+
 
 MAX_LINE_CHARS = 2000
 DEFAULT_READ_LIMIT = 2000
@@ -36,6 +43,10 @@ BINARY_SNIFF_BYTES = 8192
 
 
 def _err(exc: Exception) -> dict[str, Any]:
+    # Returns dict[str, Any] (not ErrorEnvelope) so tool functions can
+    # mix this into their wider envelopes — `do_read_file` for example
+    # returns either `{lines, total, offset, limit, ...}` or this error
+    # shape, and the union of the two is dict[str, Any].
     return {"error": str(exc)}
 
 
@@ -182,7 +193,7 @@ def do_glob_files(pattern: str) -> dict[str, Any]:
 
 def _grep_with_rg(
     pattern: str, path: str, glob: str | None
-) -> list[dict[str, Any]] | dict[str, Any] | None:
+) -> list[GrepMatch] | dict[str, Any] | None:
     """Collect matches via `rg`. Returns the match list, an error
     envelope, or None when `rg` is unavailable (caller falls back)."""
     if shutil.which("rg") is None:
@@ -202,7 +213,7 @@ def _grep_with_rg(
     except OSError as exc:
         return _err(exc)
 
-    matches: list[dict[str, Any]] = []
+    matches: list[GrepMatch] = []
     deadline = time.monotonic() + GREP_TIMEOUT_SECONDS
     try:
         assert proc.stdout is not None
@@ -236,9 +247,7 @@ def _grep_with_rg(
     return matches
 
 
-def _grep_python(
-    pattern: str, path: str, glob: str | None
-) -> list[dict[str, Any]] | dict[str, Any]:
+def _grep_python(pattern: str, path: str, glob: str | None) -> list[GrepMatch] | dict[str, Any]:
     try:
         regex = re.compile(pattern)
     except re.error as exc:
@@ -255,7 +264,7 @@ def _grep_python(
         glob_pattern = glob or "**/*"
         files = [p for p in root.glob(glob_pattern) if p.is_file()]
 
-    matches: list[dict[str, Any]] = []
+    matches: list[GrepMatch] = []
     for fp in files:
         try:
             with fp.open("rb") as fh:
