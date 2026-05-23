@@ -138,12 +138,6 @@ async def chat_ws(websocket: WebSocket) -> None:
         snapshot — idempotent on the client)."""
         async with pubsub.subscribe(session_id) as queue:
             await outgoing.put(_snapshot(session_id))
-            # `state` is a 1-element list because the coalesced-snapshot
-            # closure mutates the in-flight task handle and the dirty
-            # flag, and Python closures cannot rebind outer locals from
-            # inside a nested function without `nonlocal` on every
-            # mutation site. Wrapping both in a small object would also
-            # work; the list keeps the call sites short.
             dirty: list[bool] = [False]
             flush: list[asyncio.Task[None] | None] = [None]
 

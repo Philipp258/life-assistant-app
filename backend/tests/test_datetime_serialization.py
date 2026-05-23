@@ -180,7 +180,7 @@ def test_task_summary_tool_uses_z_suffix():
         completed_at = None
 
     summary = _summarize(
-        FakeTask(),  # type: ignore[arg-type] -- ducktyped stand-in for Task ORM in serialization test
+        FakeTask(),  # type: ignore[arg-type]
         last_activity_at=datetime(2026, 5, 7, 20, 30, 0),
     )
     assert summary["do_at"] == "2026-05-07T21:25:00Z"

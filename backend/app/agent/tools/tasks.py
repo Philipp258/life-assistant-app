@@ -178,14 +178,6 @@ def do_get_task(task_id: int) -> dict[str, Any]:
 
 
 class _UnsetType:
-    """Distinct sentinel type so 'omitted' is distinguishable from 'explicit None'.
-
-    The tool needs three states per nullable field: leave alone, set to a
-    value, or clear (set to None). Using `None` as the default would
-    collapse the first two; `_Unset` makes the omitted case a separate
-    type the checker can see.
-    """
-
     _instance: "_UnsetType | None" = None
 
     def __new__(cls) -> "_UnsetType":
