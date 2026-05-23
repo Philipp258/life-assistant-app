@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.chat.models import Message
 from app.chat.service.sessions import get_or_create_main_session
 from app.chat.service.writes import save_new_messages
+from app.users.service import is_onboarding
 
 ONBOARDING_GREETING = (
     "Welcome! I'm your new personal assistant. I'll keep track of tasks, "
@@ -24,8 +25,6 @@ def inject_onboarding_greeting_if_needed(session: Session) -> bool:
     Idempotent: once any message exists in the main session, this is a
     no-op. Returns True if a row was inserted, False otherwise.
     """
-    from app.users.service import is_onboarding
-
     if not is_onboarding():
         return False
     main = get_or_create_main_session(session)

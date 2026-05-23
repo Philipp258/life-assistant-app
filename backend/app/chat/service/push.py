@@ -6,6 +6,7 @@ from pydantic_ai.messages import TextPart
 
 from app.chat.models import Message
 from app.chat.service.history import parse_message
+from app.notifications import service as notify_service
 
 
 def _extract_text_preview(row: Message, max_len: int = 140) -> str:
@@ -39,8 +40,6 @@ def _fire_assistant_message_push(row: Message, session_id: int) -> None:
     body = _extract_text_preview(row)
     if not body:
         return
-
-    from app.notifications import service as notify_service
 
     notify_service.schedule_notify(
         event_type="assistant_message",

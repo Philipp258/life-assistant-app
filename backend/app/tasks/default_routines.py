@@ -45,8 +45,7 @@ updates worth saving.
 
 Find the previous completed Weekly reflection and use its `completed_at` \
 as the start of the window; if none exists, use roughly one day ago. \
-Review main-chat and task activity since then. Read the actual conversation \
-for the few most relevant tasks before inferring anything from a title.
+Review all main-chat and task activity since then. 
 
 ## Think across abstraction levels
 

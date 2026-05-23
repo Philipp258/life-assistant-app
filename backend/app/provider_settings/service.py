@@ -14,6 +14,7 @@ from typing import Any, cast
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from app.db import SessionLocal
 from app.provider_settings.models import ProviderSettings
 from app.provider_settings.schema import ChatProvider
 
@@ -179,8 +180,6 @@ def is_chat_configured() -> bool:
 
     Conservative on uncertainty: missing table → False (e.g. a unit test
     that never ran migrations)."""
-    from app.db import SessionLocal
-
     try:
         with SessionLocal() as db:
             row = db.get(ProviderSettings, 1)
@@ -290,8 +289,6 @@ async def persist_codex_auth(blob: str) -> None:
     agent is mid-request when this fires, and the next request reads
     the same column anyway.
     """
-    from app.db import SessionLocal
-
     with SessionLocal() as db:
         row = db.get(ProviderSettings, 1)
         if row is None:

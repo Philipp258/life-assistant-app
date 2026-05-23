@@ -67,7 +67,7 @@ def test_main_session_uses_onboarding_prompt_when_flag_null(seeded_user, core_ro
 
     assert "brand-new assistant in your first conversation" in prompt
     assert "mark_onboarded" in prompt
-    assert "You are Nix" not in prompt
+    assert "Your name is Atlas" not in prompt
     assert "## App context" in prompt
     assert prompt.index("What this is") < prompt.index("## App context")
     # Onboarding mode strips the shell-tools doc and tasks doc.
@@ -77,14 +77,18 @@ def test_main_session_uses_onboarding_prompt_when_flag_null(seeded_user, core_ro
 
 def test_main_session_uses_general_prompt_when_flag_set(seeded_user, core_root):
     from app.agent import build_system_prompt
+    from app.agent.tools.onboarding import do_set_assistant_name, do_set_user_name
 
-    (core_root / "behavior.md").write_text("**Name:** Atlas\n", encoding="utf-8")
+    do_set_assistant_name("Atlas")
+    do_set_user_name("Phil")
     _set_onboarded(seeded_user, datetime.now(UTC))
     sid = _make_session("main")
 
     prompt = build_system_prompt(sid)
 
-    assert "You are Atlas, the assistant inside Life Assistant" in prompt
+    assert "## Identity" in prompt
+    assert "Your name is Atlas." in prompt
+    assert "You are talking with Phil." in prompt
     assert "brand-new assistant" not in prompt
     assert "## How tasks work" in prompt
 

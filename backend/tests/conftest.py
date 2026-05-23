@@ -250,6 +250,11 @@ def _test_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 preferred_chat_provider="zai",
             )
         )
+        # Mirror the post-onboarding invariant in production: both
+        # identity names exist before any general-prompt rendering.
+        # Onboarding-specific tests can clear these rows explicitly.
+        db.add(_settings_models.AppSetting(key="assistant_name", value="Atlas"))
+        db.add(_settings_models.AppSetting(key="user_name", value="Phil"))
         db.commit()
 
     monkeypatch.setattr(db_module, "engine", test_engine, raising=True)
@@ -262,6 +267,7 @@ def _test_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from app import main as main_mod
 
     monkeypatch.setattr(main_mod, "seed_repo_defaults", lambda db: None, raising=True)
+    monkeypatch.setattr(main_mod, "SessionLocal", TestSession, raising=True)
 
     # Re-bind already-imported `SessionLocal` references.
     from app.tasks import router as tasks_router_mod
@@ -328,6 +334,10 @@ def _test_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from app.users import set_password as set_password_mod
 
     monkeypatch.setattr(set_password_mod, "SessionLocal", TestSession, raising=True)
+
+    from app.knowledge import identity as identity_mod
+
+    monkeypatch.setattr(identity_mod, "SessionLocal", TestSession, raising=True)
 
     from app.auth import router as auth_router_mod
 

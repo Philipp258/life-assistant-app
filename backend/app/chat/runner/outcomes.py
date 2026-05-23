@@ -14,10 +14,13 @@ import logging
 from pydantic_ai.messages import ModelResponse, TextPart
 from sqlalchemy.orm import Session
 
-from app.chat.service import save_new_messages
+from app.chat.service import save_new_messages, save_task_handoff
 from app.datetime_utils import normalize_to_naive_utc, utc_now
 from app.db import SessionLocal
+from app.knowledge.identity import resolve_assistant_name
 from app.tasks.models import Task
+from app.tasks.schemas import TaskUpdate
+from app.tasks.service import update_task
 
 from .messages import (
     ERROR_ESCALATION_THRESHOLD,
@@ -93,9 +96,6 @@ def _persist_wake_outcome(
             _handle_reschedule_limit_outcome(session, task_id)
 
         if outcome == "stalled" and task.consecutive_stalls >= STALL_ESCALATION_THRESHOLD:
-            from app.tasks.schemas import TaskUpdate
-            from app.tasks.service import update_task
-
             logger.warning(
                 "runner: escalating task %d to user after %d consecutive stalls",
                 task_id,
@@ -103,26 +103,18 @@ def _persist_wake_outcome(
             )
             chat_session_id = task.chat_session_id
             if chat_session_id is not None:
-                from app.knowledge.identity import resolve_assistant_name
-
                 body = ESCALATION_MESSAGE.format(assistant_name=resolve_assistant_name())
                 save_new_messages(
                     session,
                     chat_session_id,
                     [ModelResponse(parts=[TextPart(content=body)])],
                 )
-                from app.chat.service import save_task_handoff
-
                 save_task_handoff(session, chat_session_id, body)
             update_task(session, task_id, TaskUpdate(assignee="user"))
     return outcome
 
 
 def _handle_reschedule_limit_outcome(session: Session, task_id: int) -> None:
-    from app.knowledge.identity import resolve_assistant_name
-    from app.tasks.schemas import TaskUpdate
-    from app.tasks.service import update_task
-
     task = session.get(Task, task_id)
     if task is None or task.chat_session_id is None:
         return
@@ -136,8 +128,6 @@ def _handle_reschedule_limit_outcome(session: Session, task_id: int) -> None:
         task.chat_session_id,
         [ModelResponse(parts=[TextPart(content=body)])],
     )
-    from app.chat.service import save_task_handoff
-
     save_task_handoff(session, task.chat_session_id, body)
     logger.warning(
         "runner: pausing task %d after %d consecutive reschedules",
@@ -157,17 +147,12 @@ def _handle_error_outcome(session: Session, task_id: int, error_text: str) -> No
     task back to the user via `update_task`. Main-chat surfacing of the
     pause rides the task-terminal event drain (`app.chat.events`).
     """
-    from app.tasks.schemas import TaskUpdate
-    from app.tasks.service import update_task
-
     task = session.get(Task, task_id)
     if task is None:
         return
 
     chat_session_id = task.chat_session_id
     error_label = error_text or "unknown error"
-    from app.knowledge.identity import resolve_assistant_name
-
     assistant_name = resolve_assistant_name()
 
     if task.consecutive_errors < ERROR_ESCALATION_THRESHOLD:
@@ -187,8 +172,6 @@ def _handle_error_outcome(session: Session, task_id: int, error_text: str) -> No
         chat_session_id,
         [ModelResponse(parts=[TextPart(content=body)])],
     )
-    from app.chat.service import save_task_handoff
-
     save_task_handoff(session, chat_session_id, body)
     logger.warning(
         "runner: pausing task %d after %d consecutive errors",

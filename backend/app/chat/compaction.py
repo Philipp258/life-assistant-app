@@ -16,9 +16,11 @@ paraphrase.
 from __future__ import annotations
 
 import inspect
+import json
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 
+from pydantic_ai import Agent
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -128,8 +130,6 @@ def _part_text(part: _MessagePart) -> str:
             args_str = ""
         else:
             try:
-                import json
-
                 args_str = json.dumps(args, default=str)
             except Exception:
                 args_str = str(args)
@@ -240,8 +240,6 @@ def _render_part(part: _MessagePart, *, tool_output_truncate: int) -> str:
         elif args is None:
             args_str = ""
         else:
-            import json
-
             try:
                 args_str = json.dumps(args, default=str)
             except Exception:
@@ -268,8 +266,6 @@ def _default_summarizer(text: str) -> str:
     production path runs inside FastAPI's async handler and uses
     `_default_summarizer_async` via `acompact` instead.
     """
-    from pydantic_ai import Agent
-
     from app.agent import build_chat_model
     from app.agent.usage import default_usage_limits
 
@@ -289,8 +285,6 @@ async def _default_summarizer_async(text: str) -> str:
     loop when called from FastAPI's async handler and (b) block the
     loop for the multi-second LLM round-trip.
     """
-    from pydantic_ai import Agent
-
     from app.agent import build_chat_model
     from app.agent.usage import default_usage_limits
 

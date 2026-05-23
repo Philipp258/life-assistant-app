@@ -8,12 +8,14 @@ inside the runner package.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 
 from pydantic_ai.messages import ModelRequest, SystemPromptPart
 
 from app.datetime_utils import utc_now
 from app.tasks.models import Task
+from app.tasks.task_log import is_recurring_assistant_task
 from pydantic_ai.messages import UserPromptPart
 
 

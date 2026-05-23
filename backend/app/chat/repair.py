@@ -32,6 +32,9 @@ from pydantic_ai.messages import (
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.chat.models import Message
+from app.chat.service import save_new_messages
+
 INTERRUPTED_MESSAGE = "Tool execution was interrupted by an error."
 
 
@@ -82,9 +85,6 @@ def repair_persisted_history(session: Session, session_id: int) -> bool:
     partial-write breakage from a previous interrupted turn is healed
     before pydantic-ai validates the next history load.
     """
-    from app.chat.models import Message
-    from app.chat.service import save_new_messages
-
     rows = session.scalars(
         select(Message)
         .where(

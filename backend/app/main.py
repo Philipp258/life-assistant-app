@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -13,30 +15,35 @@ from typing_extensions import override
 
 from app.auth.middleware import SessionAuthMiddleware
 from app.auth.router import router as auth_router
+from app.chat import runner
 from app.chat.router import router as chat_router
-from app.config import FRONTEND_DIST, settings
+from app.chat.service import get_or_create_main_session
+from app.config import FRONTEND_DIST, KNOWLEDGE_DIR, SKILLS_DIR, settings
+from app.db import SessionLocal, engine
 from app.health.router import router as health_router
+from app.knowledge import core as core_memory
 from app.knowledge.router import router as knowledge_router
 from app.labels.router import router as labels_router
+from app.notifications import due_scheduler
 from app.notifications.router import router as notifications_router
 from app.observability import flush_observability, setup_observability, setup_sentry
 from app.provider_settings.router import (
     legacy_router as provider_settings_legacy_router,
     router as provider_settings_router,
 )
+from app.saved_task_views.defaults import ensure_default_saved_views
 from app.saved_task_views.router import router as saved_task_views_router
 from app.settings.router import router as runtime_settings_router
 from app.skills.router import router as skills_router
+from app.tasks.default_routines import ensure_default_routines
 from app.tasks.router import router as tasks_router
 from app.users.router import router as users_router
+from app.users.service import ensure_user
 from app.voice.router import router as voice_router
 
 
 def seed_repo_defaults(db: Session) -> None:
     """Materialize repo-shipped defaults that should exist on every install."""
-    from app.saved_task_views.defaults import ensure_default_saved_views
-    from app.tasks.default_routines import ensure_default_routines
-
     ensure_default_routines(db)
     ensure_default_saved_views(db)
 
@@ -44,8 +51,6 @@ def seed_repo_defaults(db: Session) -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Touch the engine so WAL pragmas run on first connect.
-    from app.db import engine
-
     with engine.connect():
         pass
 
@@ -54,9 +59,6 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # under backend/defaults/skills/ (tracked in git, immutable) so
     # there is nothing to seed under data/skills/ — only user-installed
     # skills live there.
-    from app.config import KNOWLEDGE_DIR, SKILLS_DIR
-    from app.knowledge import core as core_memory
-
     core_memory.seed_if_missing()
     KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -66,8 +68,6 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # and silently freeze it at the version that shipped on first boot.
     # Delete unconditionally; users who want a custom variant can
     # install it under a different name.
-    import logging
-
     log = logging.getLogger("app.main")
     for slug in ("add-skills", "github", "self-update"):
         legacy = SKILLS_DIR / slug / "SKILL.md"
@@ -90,10 +90,6 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # (assistant routines and saved task views) are also seeded
     # idempotently at every boot; there is intentionally no runtime
     # env/config switch because missing defaults are user-visible.
-    from app.chat.service import get_or_create_main_session
-    from app.db import SessionLocal
-    from app.users.service import ensure_user
-
     with SessionLocal() as db:
         ensure_user(db)
         get_or_create_main_session(db)
@@ -102,10 +98,6 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     # Capture the main event loop so `schedule_wake` can dispatch wakes
     # from sync FastAPI routes (which run in a threadpool) and sync
     # pydantic-ai tools (which run via `run_in_executor`).
-    import asyncio
-
-    from app.chat import runner
-
     runner.set_main_loop(asyncio.get_running_loop())
     log.info("startup: main loop captured for runner")
 
@@ -121,8 +113,6 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     runner.start_watchdog()
 
     # Periodic Web Push fan-out for tasks whose due_at has passed.
-    from app.notifications import due_scheduler
-
     due_scheduler.start()
 
     try:

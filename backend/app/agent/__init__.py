@@ -3,37 +3,38 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models import Model
 
 from app.agent.deps import AgentDeps
-from app.agent.safe_tools import install as install_safe_tools
 from app.agent.providers.codex import build_codex_model
 from app.agent.providers.openai import build_openai_model
 from app.agent.providers.openrouter import build_openrouter_model
 from app.agent.providers.zai import DEFAULT_ZAI_ENDPOINT, build_zai_model
+from app.agent.safe_tools import install as install_safe_tools
 from app.agent.tools import archived_messages as archived_message_tools
 from app.agent.tools import chats as chat_tools
-from app.datetime_utils import serialize_utc
 from app.agent.tools import fs as fs_tools
 from app.agent.tools import knowledge as knowledge_tools
 from app.agent.tools import onboarding as onboarding_tools
-from app.agent.tools import sessions as session_tools
 from app.agent.tools import self_update as self_update_tools
+from app.agent.tools import sessions as session_tools
 from app.agent.tools import settings as settings_tools
 from app.agent.tools import shell as shell_tools
 from app.agent.tools import tasks as task_tools
 from app.agent.tools import web as web_tools
+from app.chat.models import ChatSession
+from app.datetime_utils import serialize_utc
+from app.db import SessionLocal
 from app.knowledge import core as core_memory
 from app.knowledge import identity as identity_resolver
 from app.knowledge import store as knowledge_store
 from app.skills import store as skills_store
+from app.tasks.models import Task
+from app.tasks.task_log import should_expose_task_log, task_log_path
 from app.users import service as users_service
-
-if TYPE_CHECKING:
-    from app.tasks.models import Task
 
 _agent: Agent[AgentDeps, str] | None = None
 
@@ -41,12 +42,24 @@ _agent: Agent[AgentDeps, str] | None = None
 APP_CONTEXT_PROMPT = """\
 ## App context
 
-You are {assistant_identity}.
-
-Life Assistant has chats, tasks, knowledge notes, core memory, and skills. \
-Main chat is for conversation and coordination; task chats hold focused work. \
-Tasks, knowledge notes, and core memory are durable sources of truth; chat \
+Life Assistant is a personal-assistant app the user runs for themselves. \
+It has chats, tasks, knowledge notes, core memory, and skills. Main chat \
+is for conversation and coordination; task chats hold focused work. Tasks, \
+knowledge notes, and core memory are durable sources of truth; chat \
 scrollback is conversational context."""
+
+
+IDENTITY_PROMPT = """\
+## Identity
+
+Your name is {assistant_name}. You are talking with {user_name}."""
+
+
+ONBOARDING_IDENTITY_PROMPT = """\
+## Identity
+
+You are a brand-new assistant in your first conversation with the user. \
+You do not have a name yet, and you do not yet know the user's name."""
 
 
 TASK_LINK_PROMPT = """\
@@ -139,18 +152,20 @@ it scoped to this routine."""
 ONBOARDING_PROMPT = """\
 ## What this is
 
-A short setup ritual. The user names you, tells you who they are, and explains how they want you to behave. Save the durable parts into core memory; chat scrollback is not memory. When both core files reflect the conversation and setup feels complete, call `mark_onboarded` once. The next turn switches to normal mode.
+A short setup ritual. The user names you, tells you who they are, and explains how they want you to behave. Identity (your name and the user's name) is structured — store it through the dedicated tools. Tone, behaviour, and facts about the user live in core memory as prose.
 
 ## What "done" looks like
 
-1. `data/core/behavior.md` — first non-empty line is exactly `**Name:** <X>` where `<X>` is the name the user picked for you. Followed by 1–4 lines on tone/style/how-to-act, in the user's own words.
-2. `data/core/about_user.md` — at minimum: the user's own name + one fact about them (what they do, what matters, how they intend to use you).
+1. `set_assistant_name(name)` has been called with the name the user picked for you.
+2. `set_user_name(name)` has been called with the user's own name.
+3. `data/core/behavior.md` carries 1–4 lines on tone/style/how-to-act, in the user's own words.
+4. `data/core/about_user.md` carries at least one fact about the user (what they do, what matters, how they intend to use you). Do not write either name into these files; identity is not stored there.
 
 ## How to run it
 
-Read the user's reply to the greeting; they named you in it. Use that name from now on. Ask their own name, then 1–2 open questions about work, interests, or how they want you to behave. Save facts as they arrive with `save_core_memory`, rewriting each file as you learn more. Keep replies short; this is setup, not a general chat.
+Read the user's reply to the greeting; they named you in it. Call `set_assistant_name` with that name and use it from now on. Ask the user's own name and call `set_user_name` as soon as they give it. Then ask 1–2 open questions about work, interests, or how they want you to behave, and save what you learn with `save_core_memory`. Keep replies short; this is setup, not a general chat.
 
-This conversation is narrow on purpose. Don't create tasks, edit knowledge, run shell tools, or promise capabilities — the user discovers those after onboarding ends. Don't call `mark_onboarded` before both files are written.
+This conversation is narrow on purpose. Don't create tasks, edit knowledge, run shell tools, or promise capabilities — the user discovers those after onboarding ends. `mark_onboarded` will refuse until both names are stored; only call it once both names and both core files are in place.
 """
 
 
@@ -254,7 +269,6 @@ def build_chat_model() -> Model:
     # Local import: the picker reaches back into `app.agent` via
     # `invalidate_agent`, so import it lazily to keep that cycle off the
     # module-load path.
-    from app.db import SessionLocal
     from app.provider_settings import service as provider_service
 
     with SessionLocal() as db:
@@ -286,11 +300,6 @@ def _task_for_session(session_id: int | None) -> Task | None:
     """Return the Task this chat belongs to, or None for general chats."""
     if session_id is None:
         return None
-    # Local import avoids a cycle (chat.models → db → app config at import).
-    from app.chat.models import ChatSession
-    from app.db import SessionLocal
-    from app.tasks.models import Task
-
     with SessionLocal() as db:
         chat = db.get(ChatSession, session_id)
         if chat is None or chat.task_id is None:
@@ -306,9 +315,6 @@ def _session_kind(session_id: int | None) -> str:
     """
     if session_id is None:
         return "main"
-    from app.chat.models import ChatSession
-    from app.db import SessionLocal
-
     with SessionLocal() as db:
         chat = db.get(ChatSession, session_id)
         if chat is None:
@@ -336,7 +342,6 @@ def build_system_prompt(session_id: int | None, *, voice_mode: bool = False) -> 
     skills) must stay byte-identical across voice/non-voice turns. Only
     the tail diverges when the flag flips.
     """
-    name = identity_resolver.resolve_assistant_name()
     kind = _session_kind(session_id)
 
     # Onboarding mode: fresh user, main session, flag unset. Strip down
@@ -351,12 +356,8 @@ def build_system_prompt(session_id: int | None, *, voice_mode: bool = False) -> 
         behavior = core_memory.read(core_memory.BEHAVIOR).rstrip()
         onboarding_sections = [
             ONBOARDING_PROMPT,
-            APP_CONTEXT_PROMPT.format(
-                assistant_identity=(
-                    "a brand-new assistant in your first conversation with the user; "
-                    "you have no name yet"
-                )
-            ),
+            APP_CONTEXT_PROMPT,
+            ONBOARDING_IDENTITY_PROMPT,
             "## About you (current contents — you will overwrite)",
             about,
             "## How to behave (current contents — you will overwrite)",
@@ -371,12 +372,10 @@ def build_system_prompt(session_id: int | None, *, voice_mode: bool = False) -> 
             onboarding_sections.extend(["## Voice mode", VOICE_MODE_PROMPT])
         return "\n\n".join(onboarding_sections)
 
-    app_context = APP_CONTEXT_PROMPT.format(
-        assistant_identity=(
-            f"{name}, the assistant inside Life Assistant: "
-            "a personal-assistant app the user runs for themselves"
-        )
-    )
+    name = identity_resolver.resolve_assistant_name()
+    user_name = identity_resolver.resolve_user_name()
+    app_context = APP_CONTEXT_PROMPT
+    identity_section = IDENTITY_PROMPT.format(assistant_name=name, user_name=user_name)
 
     # The role section is a kind-specific preamble, each
     # carrying its own `##` heading. The shared app context comes first so
@@ -394,13 +393,9 @@ def build_system_prompt(session_id: int | None, *, voice_mode: bool = False) -> 
             fields.append(f"- do_at: {serialize_utc(task.do_at)}")
         if task.due_at is not None:
             fields.append(f"- due_at: {serialize_utc(task.due_at)}")
-        from app.tasks.task_log import should_expose_task_log
-
         task_log_line = task.task_log_line
         exposes_task_log = should_expose_task_log(task_log_line=task_log_line)
         if exposes_task_log and task_log_line is not None:
-            from app.tasks.task_log import task_log_path
-
             fields.append(f"- task_log: {task_log_path(task_log_line)}")
         role = TASK_PROMPT + "\n\n" + "\n".join(fields)
     else:
@@ -429,6 +424,7 @@ def build_system_prompt(session_id: int | None, *, voice_mode: bool = False) -> 
     if task is not None:
         sections = [
             app_context,
+            identity_section,
             role,
             INSPECT_TOOLS_PROMPT,
             ACT_TOOLS_PROMPT,
@@ -443,6 +439,7 @@ def build_system_prompt(session_id: int | None, *, voice_mode: bool = False) -> 
     else:
         sections = [
             app_context,
+            identity_section,
             role,
             INSPECT_TOOLS_PROMPT,
             *common_tail,
@@ -475,8 +472,6 @@ def _build_agent() -> Agent[AgentDeps, str]:
     @agent.tool_plain
     def now(timezone: str = "UTC") -> str:
         """Return the current time as an ISO 8601 string in the given timezone."""
-        from zoneinfo import ZoneInfo
-
         try:
             tz = ZoneInfo(timezone)
         except Exception:
