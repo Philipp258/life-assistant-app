@@ -125,7 +125,36 @@ def _sanitize_error_text(exc: BaseException, *, max_len: int = 200) -> str:
     return summary
 
 
-def _bootstrap_prompt(task: Task) -> str:
+def _format_cadence(interval_count: int, interval_unit: str) -> str:
+    """Human cadence phrase: 'every day', 'every 2 weeks'."""
+    if interval_count == 1:
+        return f"every {interval_unit}"
+    return f"every {interval_count} {interval_unit}s"
+
+
+def _run_context_block(task: Task, prev_completed_at: datetime | None) -> str | None:
+    """Cadence + previous-completion block for the bootstrap prompt.
+
+    Lets a routine's brief talk in relative terms ("since the previous
+    run") while the runner supplies the live anchors here. Returns None
+    for non-recurring tasks; the brief alone is enough for one-shots.
+    """
+    if not is_recurring_assistant_task(
+        assignee=task.assignee,
+        interval_unit=task.interval_unit,
+        interval_count=task.interval_count,
+    ):
+        return None
+    assert task.interval_unit is not None and task.interval_count is not None
+    cadence = _format_cadence(task.interval_count, task.interval_unit)
+    if prev_completed_at is None:
+        prev = "none (first cycle)"
+    else:
+        prev = prev_completed_at.strftime("%Y-%m-%d %H:%M UTC")
+    return f"## Run context\n\nCadence: {cadence}.\nPrevious completion: {prev}."
+
+
+def _bootstrap_prompt(task: Task, prev_completed_at: datetime | None = None) -> str:
     """Synthetic user prompt sent on the first wake of a freshly created task.
 
     Most chat models (including Z.AI's glm-* family) reject requests that
@@ -140,6 +169,9 @@ def _bootstrap_prompt(task: Task) -> str:
     ]
     if task.description and task.description.strip():
         parts.append(f"Notes: {task.description.strip()}")
+    context_block = _run_context_block(task, prev_completed_at)
+    if context_block is not None:
+        parts.append(context_block)
     parts.append(
         "Work in this task chat. Share useful progress here, not by editing "
         "the task description. When done, blocked on the user, or waiting on "
@@ -159,8 +191,13 @@ def _build_stall_reminder() -> ModelRequest:
     return ModelRequest(parts=[SystemPromptPart(content=STALL_REMINDER_TEXT)])
 
 
-def _build_bootstrap_request(task: Task) -> ModelRequest:
+def _build_bootstrap_request(task: Task, prev_completed_at: datetime | None = None) -> ModelRequest:
     """ModelRequest carrying the synthetic bootstrap user prompt."""
     return ModelRequest(
-        parts=[UserPromptPart(content=_bootstrap_prompt(task), timestamp=utc_now())]
+        parts=[
+            UserPromptPart(
+                content=_bootstrap_prompt(task, prev_completed_at),
+                timestamp=utc_now(),
+            )
+        ]
     )

@@ -43,6 +43,7 @@ from app.chat.service import (
 from app.chat.session_policy import resolve_kind
 from app.db import SessionLocal
 from app.tasks.models import Task
+from app.tasks.service import previous_completed_sibling
 
 from .claims import _get_task_for_session, _task_in_terminal_state
 from .inputs import _has_new_task_input_since
@@ -156,8 +157,10 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
         # activity in their chat as soon as the runner starts, rather than
         # staying blank until the first full agent turn completes. Running
         # the agent from message_history avoids saving the prompt twice.
-        bootstrap = _build_bootstrap_request(task)
         with SessionLocal() as db:
+            prev = previous_completed_sibling(db, task)
+            prev_completed_at = prev.completed_at if prev is not None else None
+            bootstrap = _build_bootstrap_request(task, prev_completed_at)
             rows = save_new_messages(db, session_id, [bootstrap])
             task_history_cursor = max(task_history_cursor, *(row.id for row in rows))
         history = history + [bootstrap]

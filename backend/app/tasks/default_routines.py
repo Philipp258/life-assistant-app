@@ -38,14 +38,14 @@ TASK_LOG_MAINTENANCE_TITLE = "Task log maintenance"
 
 
 REFLECTION_BRIEF = """\
-You wake once a week to review recent activity and propose core-memory \
-updates worth saving.
+You wake to review recent activity and propose core-memory updates worth \
+saving.
 
 ## Look back in detail
 
-Find the previous completed Weekly reflection and use its `completed_at` \
-as the start of the window; if none exists, use roughly one day ago. \
-Review all main-chat and task activity since then. 
+Use the previous completion timestamp in the Run context block as the \
+start of the window; on the first cycle, look back one cadence. Review \
+all main-chat and task activity since then.
 
 ## Think across abstraction levels
 
@@ -86,7 +86,7 @@ Move on to the next observation.
 ## Done
 
 Once every observation is resolved — or you found nothing worth raising \
-— call `complete_task`. The task auto-respawns for next week.
+— call `complete_task`. The task auto-respawns for the next cycle.
 
 Tone: terse, observational, not eager. You're surfacing what you noticed \
 and asking if it's worth remembering. Empty reflections are fine — \
@@ -94,47 +94,50 @@ saying nothing is better than padding."""
 
 
 CONSOLIDATION_BRIEF = """\
-You wake up once a day to harvest durable bits from yesterday's main \
-chat and finished tasks into the knowledge store. The main chat is \
-ephemeral for you — anything worth keeping has to land in \
-`data/knowledge/` or it's gone from your view.
+You wake to harvest durable bits from recent main-chat activity and \
+finished tasks into the knowledge store. The main chat is ephemeral for \
+you — anything worth keeping has to land in `data/knowledge/` or it's \
+gone from your view.
 
 ## What to look at
 
-Find yesterday's main-chat messages and tasks completed in the same window. \
-The main chat is the session whose `task_id` is null; in practice it is the \
-lowest-id session unless an old install is unusual.
+Window starts at the previous completion timestamp in the Run context \
+block; on the first cycle, look back one cadence. Find main-chat \
+messages and tasks completed in that window. The main chat is the \
+session whose `task_id` is null; in practice it is the lowest-id session \
+unless an old install is unusual.
 
 ## What to keep
 
 Keep durable signal: facts, preferences, learnings, and follow-ups the user \
 mentioned. Skip greetings, one-off chitchat, and anything already captured. \
-Prefer fewer, denser notes over many small ones; duplicate-note pollution is \
-the main risk on a daily cadence.
+Prefer fewer, denser notes over many small ones; duplicate-note pollution \
+is the main risk on a short cadence.
 
 Merge into an existing related knowledge note when one fits; otherwise \
 create a note under a sensible folder. Skip items that don't add anything \
 to what's already stored.
 
-Call `complete_task` when done. The task auto-respawns for tomorrow.
+Call `complete_task` when done. The task auto-respawns for the next cycle.
 
-Tone: terse, observational, low-friction. Saying "nothing notable \
-today" and completing the task is a fine outcome on quiet days. Do \
-not narrate the process — the chat record is for your own continuity \
-across runs, not a report."""
+Tone: terse, observational, low-friction. Saying "nothing notable" and \
+completing the task is a fine outcome on quiet cycles. Do not narrate \
+the process — the chat record is for your own continuity across runs, \
+not a report."""
 
 
 COLLECT_BRIEF = """\
-You wake up once a day to scan recent activity for concrete moments \
-that should have been captured as improvement items but weren't. \
-Improvement items are evidence — discrete moments where the assistant did \
-something wrong, inefficient, confusing, or otherwise worth learning \
-from.
+You wake to scan recent activity for concrete moments that should have \
+been captured as improvement items but weren't. Improvement items are \
+evidence — discrete moments where the assistant did something wrong, \
+inefficient, confusing, or otherwise worth learning from.
 
 ## Scope
 
-Use roughly the last 24 hours. Review main-chat and task activity in that \
-window, reading task chats when their conversation looks relevant.
+Window starts at the previous completion timestamp in the Run context \
+block; on the first cycle, look back one cadence. Review main-chat and \
+task activity in that window, reading task chats when their conversation \
+looks relevant.
 
 ## What counts
 
@@ -148,8 +151,8 @@ For each genuine opportunity, create an improvement item whose description \
 stands alone: what happened, what was off, and why it matters. Avoid \
 speculative or vague "could be nicer" items.
 
-Quiet day = zero items. Saying nothing is better than padding. \
-Call `complete_task` when done; the task auto-respawns for tomorrow.
+Quiet cycle = zero items. Saying nothing is better than padding. \
+Call `complete_task` when done; the task auto-respawns for the next cycle.
 
 Tone: terse, observational, evidence-driven. You are not pitching \
 fixes here — that's the Process improvement items routine's job. You \
@@ -157,8 +160,8 @@ are only collecting evidence."""
 
 
 PROCESS_BRIEF = """\
-You wake up once a day to turn unresolved improvement items into \
-concrete suggestions the user can review and apply.
+You wake to turn unresolved improvement items into concrete suggestions \
+the user can review and apply.
 
 Read and follow the `improve-life-assistant` skill. It gives the context for \
 turning evidence into the right kind of durable change: core memory, \
@@ -168,13 +171,13 @@ Hard rule: do NOT apply suggestions from this routine. Do not call \
 `mark_improvement_suggestion_applied`. The Apply step is gated to \
 explicit user action via the Improve the assistant panel.
 
-Quiet day = zero new/updated suggestions. Call `complete_task` when \
-done; the task auto-respawns for tomorrow."""
+Quiet cycle = zero new/updated suggestions. Call `complete_task` when \
+done; the task auto-respawns for the next cycle."""
 
 
 DISK_SPACE_BRIEF = """\
-You wake once a week to keep an eye on disk space on the host machine \
-this assistant runs on. The goal is early warning: catch filesystems, \
+You wake to keep an eye on disk space on the host machine this \
+assistant runs on. The goal is early warning: catch filesystems, \
 inodes, or directories trending toward full before they affect the app \
 or host, so the user has time to react.
 
@@ -189,7 +192,7 @@ weigh in on."""
 
 
 TASK_LOG_MAINTENANCE_BRIEF = """\
-You wake once a week to keep the durable routine logs under \
+You wake to keep the durable routine logs under \
 `data/knowledge/Task Log/` from growing unbounded. Each recurring \
 assistant routine reads its own log before acting and appends concrete \
 experience after a cycle. The point is to preserve enough history for \
@@ -234,8 +237,8 @@ transfer can be useful, but only as judgment/context for the agent reading \
 a relevant log; don't mechanically port patterns from one domain to \
 another.
 
-Quiet week = no eligible logs = call `complete_task` with a short \
-"nothing to compress" handoff. The routine respawns weekly."""
+Quiet cycle = no eligible logs = call `complete_task` with a short \
+"nothing to compress" handoff. The routine respawns on the next cycle."""
 
 
 def _next_weekday_at(now: datetime, weekday: int, hour: int, minute: int = 0) -> datetime:
