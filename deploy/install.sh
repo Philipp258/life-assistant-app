@@ -13,6 +13,7 @@
 set -euo pipefail
 
 REPO_URL=${LIFE_ASSISTANT_REPO_URL:-https://github.com/Philipp258/life-assistant.git}
+REF=${LIFE_ASSISTANT_REF:-main}
 REPO_DIR=/opt/life-assistant
 DATA_DIR=/var/lib/life-assistant/data
 BACKUP_DIR=/var/lib/life-assistant/backups
@@ -48,13 +49,19 @@ install -d -o life-assistant -g life-assistant -m 755 "$REPO_DIR"
 install -d -o life-assistant -g life-assistant -m 750 "$DATA_DIR" "$BACKUP_DIR"
 install -d -o root -g root  -m 755 "$ETC_DIR"
 
-echo "==> clone repo"
+echo "==> clone repo (ref: $REF)"
 if [ ! -d "$REPO_DIR/.git" ]; then
-  sudo -u life-assistant git clone --quiet "$REPO_URL" "$REPO_DIR"
+  sudo -u life-assistant git clone --quiet --branch "$REF" "$REPO_URL" "$REPO_DIR"
 else
-  sudo -u life-assistant git -C "$REPO_DIR" fetch --quiet origin main
-  sudo -u life-assistant git -C "$REPO_DIR" reset --hard origin/main
+  sudo -u life-assistant git -C "$REPO_DIR" fetch --quiet origin "$REF"
+  sudo -u life-assistant git -C "$REPO_DIR" reset --hard "origin/$REF"
 fi
+
+# Persist the deploy ref so update.sh stays on the same branch.
+cat > "$ETC_DIR/deploy.env" <<EOF
+REF=$REF
+EOF
+chmod 644 "$ETC_DIR/deploy.env"
 
 echo "==> data symlink"
 # Life Assistant reads/writes data/ via paths relative to the repo. Symlink it

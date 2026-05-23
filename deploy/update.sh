@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Life Assistant self-update. Runs as the `life-assistant` user via life-assistant-update.service.
-# Pulls main, installs deps, runs migrations, builds frontend, restarts the legacy life-assistant service.
+# Pulls the configured branch (default main), installs deps, runs migrations,
+# builds frontend, restarts the legacy life-assistant service.
 set -euo pipefail
 
 # Tell pnpm we're non-interactive so it won't bail on "Aborted removal of
@@ -11,16 +12,23 @@ REPO=/opt/life-assistant
 BOOTSTRAP_VENV=$REPO/.venv          # holds uv binary
 PROJECT_VENV=$REPO/backend/.venv     # uv-managed project deps
 
+REF=main
+if [ -r /etc/life-assistant/deploy.env ]; then
+  # shellcheck disable=SC1091
+  source /etc/life-assistant/deploy.env
+fi
+REF="${REF:-main}"
+
 cd "$REPO"
 
-git fetch --quiet origin main
+git fetch --quiet origin "$REF"
 LOCAL=$(git rev-parse HEAD)
-REMOTE=$(git rev-parse origin/main)
+REMOTE=$(git rev-parse "origin/$REF")
 if [ "$LOCAL" = "$REMOTE" ]; then
-  echo "already up to date ($LOCAL)"
+  echo "already up to date ($LOCAL on $REF)"
   exit 0
 fi
-git reset --hard origin/main
+git reset --hard "origin/$REF"
 
 cd "$REPO/backend"
 "$BOOTSTRAP_VENV/bin/python" -m pip install -q --upgrade uv

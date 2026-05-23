@@ -6,14 +6,26 @@ real user would and write a report.
 
 ## What you have
 
-- A VPS whose public IP is in `release-test/.current-run` (key `IP`)
-  and a run identifier in the same file (key `RUN_ID`).
+- A VPS whose public IP is in `release-test/.current-run` (key `IP`),
+  a run identifier in the same file (key `RUN_ID`), and optionally a
+  branch override (key `REF`).
 - Root SSH access to that VPS using your already-loaded SSH key.
 - A browser, via the agent-browser skill, that you can point at any URL
   the install process gives you.
 - This repo, read-only. Do not modify code, do not commit, do not open
   PRs. The only writes you make are inside
   `release-test/reports/<RUN_ID>/`.
+
+## Release-test mechanics (not part of any scenario)
+
+- If `.current-run` has `REF=<branch>`, every installer invocation must
+  be made with `LIFE_ASSISTANT_REF=<branch>` set in the environment,
+  and the `curl` URL for `deploy/install.sh` must use that branch in
+  its path (`raw.githubusercontent.com/<owner>/<repo>/<branch>/deploy/install.sh`).
+  Without that override, the installer defaults to `main`, which is
+  not what we want when release-testing a feature branch.
+- This override is a release-test mechanism, not a user-facing
+  concern. Do not rate the README down for failing to mention it.
 
 ## How to run
 

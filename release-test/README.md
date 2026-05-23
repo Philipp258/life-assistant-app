@@ -32,15 +32,22 @@ open. Pay by the hour, destroy when done.
 
 ### 2. Record the run target
 
-Create `release-test/.current-run` with two lines:
+Create `release-test/.current-run` with:
 
 ```
 IP=<public ip>
 RUN_ID=<YYYY-MM-DDTHH-MM>
+REF=<branch to install, optional>
 ```
 
 `RUN_ID` is just a folder name for the report. Pick anything that
 sorts; an ISO-ish timestamp is fine.
+
+`REF` is the git branch the installer should check out. Omit it (or
+set to `main`) for a real release test. Set it to the current working
+branch when you want to release-test a feature branch before merging —
+the installer respects `LIFE_ASSISTANT_REF` and the agent will pass it
+through.
 
 ### 3. Launch the agent
 
