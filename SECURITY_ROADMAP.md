@@ -83,20 +83,20 @@ covered by trust model, no change · **CHECK** = needs investigation.
   body parsing (JSON-only) — if true, threat is mostly notional. Confirm by
   grep for `Form(...)` / `request.form()`.
 
-## 8. Backend binds `0.0.0.0:8000` without TLS — DO (uvicorn-native TLS)
-- `deploy/life-assistant.service:12` — `--host 0.0.0.0`. `install.sh:132` opens
-  UFW for 8000.
-- README setup: "Open `http://<vps-ip>:8000/`" → plaintext over public IP.
-  Session cookie + login password travel cleartext.
-- Direction: keep the single-process model, no reverse proxy. Use uvicorn's
-  built-in TLS: `--ssl-keyfile`, `--ssl-certfile`. Cert via certbot DNS-01 (or
-  standalone on port 80). Renewal: systemd timer that runs certbot then
-  `systemctl restart life-assistant` (uvicorn doesn't hot-reload certs).
-- Side effect: client IP stays real → no `X-Forwarded-For` plumbing needed for
-  rate limiting (#1).
-- Open: move unit to port 443 (needs `AmbientCapabilities=CAP_NET_BIND_SERVICE`
-  in the systemd unit since service runs as non-root) vs keep 8000 and add
-  firewall NAT — decide at implementation time.
+## 8. Backend binds `0.0.0.0:8000` without TLS — CLOSED (TLS by default)
+- `install.sh` now derives a stable hostname from the VPS public IP via
+  sslip.io (`1-2-3-4.sslip.io`), runs `certbot certonly --standalone` to
+  issue a Let's Encrypt cert, drops it into `/etc/life-assistant/tls/`, and
+  starts uvicorn with `--ssl-keyfile` / `--ssl-certfile` on `:443`.
+- Service unit grants `AmbientCapabilities=CAP_NET_BIND_SERVICE` so the
+  non-root `life-assistant` user can bind 443.
+- Renewal: `certbot.timer` (system default) + a deploy hook at
+  `/etc/letsencrypt/renewal-hooks/deploy/life-assistant.sh` that re-copies
+  the cert into `/etc/life-assistant/tls/` (the service-user-readable copy)
+  and `systemctl try-restart life-assistant`.
+- Custom-domain and tailnet-only deployments documented in `deploy/README.md`.
+- Side effect (#1): client IP at uvicorn is real → no `X-Forwarded-For`
+  plumbing needed for rate limiting.
 
 ## 9. Security headers (CSP, X-Frame-Options, etc.) — SKIP
 - Out of scope.
@@ -146,11 +146,11 @@ covered by trust model, no change · **CHECK** = needs investigation.
 
 ## Execution order
 
-1. **#7 CSRF** — verify all mutating routes are JSON-only; if so, add an
+1. ~~**#8 TLS**~~ — done. uvicorn-native TLS via sslip.io + Let's Encrypt in
+   `install.sh`. Cert renewal automated via certbot deploy hook.
+2. **#7 CSRF** — verify all mutating routes are JSON-only; if so, add an
    explicit `Content-Type` guard middleware. Cheap, removes a class of bug.
-2. **#1 login rate limit** — per-IP token bucket on `/api/auth/login`.
-3. **#8 TLS / bind decision** — get explicit answer before doing anything
-   else publicly-visible. Document outcome in README §Security.
+3. **#1 login rate limit** — per-IP token bucket on `/api/auth/login`.
 4. **#13 push payload** — short investigation, document or fix.
 5. **#2 + #3 trust labels** — pass after the above. Tool output wrapping +
    system prompt update. No enforcement; relies on agent judgement.

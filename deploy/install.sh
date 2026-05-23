@@ -6,7 +6,8 @@
 #
 # After this finishes:
 #   1. systemctl restart life-assistant
-#   2. browse to http://<vps-ip>/    (login password printed below)
+#   2. browse to https://<auto-derived-name>.sslip.io/  (URL + login password
+#      printed at the end)
 #   3. finish provider setup in the UI
 
 set -euo pipefail
@@ -27,7 +28,7 @@ apt-get update -qq
 apt-get install -y -qq \
   python3.11 python3.11-venv python3-pip \
   git curl ca-certificates sqlite3 \
-  build-essential
+  build-essential certbot
 
 echo "==> nodejs 20 (nodesource)"
 if ! command -v node >/dev/null || ! node -v | grep -q '^v20'; then
@@ -95,6 +96,41 @@ EOF
   chown root:life-assistant "$ETC_DIR/life-assistant.env"
 fi
 
+echo "==> public IP + sslip.io hostname"
+PUBLIC_IP=$(curl -fsS --max-time 10 https://api.ipify.org)
+if [ -z "$PUBLIC_IP" ]; then
+  echo "could not determine public IPv4 via api.ipify.org" >&2
+  exit 1
+fi
+HOSTNAME_SSLIP="${PUBLIC_IP//./-}.sslip.io"
+echo "    public IP: $PUBLIC_IP"
+echo "    hostname:  $HOSTNAME_SSLIP"
+
+echo "==> firewall (open 80 for ACME, 443 for app)"
+if command -v ufw >/dev/null && ufw status | grep -q 'Status: active'; then
+  ufw allow 80/tcp  >/dev/null
+  ufw allow 443/tcp >/dev/null
+  # Old plaintext port — close if it was opened by a previous install.
+  ufw delete allow 8000/tcp >/dev/null 2>&1 || true
+fi
+
+echo "==> Let's Encrypt cert via certbot --standalone"
+install -d -o root -g root -m 755 /etc/letsencrypt/renewal-hooks/deploy
+install -o root -g root -m 755 "$REPO_DIR/deploy/certbot-deploy.sh" \
+  /etc/letsencrypt/renewal-hooks/deploy/life-assistant.sh
+# Idempotent: if cert exists and isn't near expiry, certbot keeps it.
+certbot certonly \
+  --standalone \
+  --non-interactive \
+  --agree-tos \
+  --register-unsafely-without-email \
+  --keep-until-expiring \
+  --preferred-challenges http \
+  -d "$HOSTNAME_SSLIP"
+# Stage cert into /etc/life-assistant/tls/ for the service user. The renewal
+# hook re-runs this script automatically every 60 days.
+/etc/letsencrypt/renewal-hooks/deploy/life-assistant.sh
+
 echo "==> first build"
 sudo -u life-assistant "$REPO_DIR/deploy/update.sh" || true   # ok if already up to date
 # update.sh exits 0 with no rebuild when already up to date; force a build
@@ -110,12 +146,6 @@ if [ -n "$SEED_LOGIN_PASS" ]; then
   # Migrations have run via update.sh / first-build branch above, so the
   # users table exists. The CLI creates the singleton row if missing.
   sudo -u life-assistant bash -c "set -a; source $ETC_DIR/life-assistant.env; set +a; cd $REPO_DIR/backend && $REPO_DIR/backend/.venv/bin/python -m app.users.set_password '$SEED_LOGIN_PASS'"
-  echo
-  echo "==============================================================="
-  echo "  Life Assistant login password: $SEED_LOGIN_PASS"
-  echo "  (rotate later with:  make set-password PASSWORD=<new>)"
-  echo "==============================================================="
-  echo
 fi
 
 echo "==> systemd units"
@@ -123,20 +153,31 @@ install -o root -g root -m 644 "$REPO_DIR/deploy/life-assistant.service"        
 install -o root -g root -m 644 "$REPO_DIR/deploy/life-assistant-update.service" /etc/systemd/system/life-assistant-update.service
 install -o root -g root -m 644 "$REPO_DIR/deploy/life-assistant-backup.service" /etc/systemd/system/life-assistant-backup.service
 install -o root -g root -m 644 "$REPO_DIR/deploy/life-assistant-backup.timer"   /etc/systemd/system/life-assistant-backup.timer
-chmod +x "$REPO_DIR/deploy/update.sh" "$REPO_DIR/deploy/backup.sh"
+chmod +x "$REPO_DIR/deploy/update.sh" "$REPO_DIR/deploy/backup.sh" "$REPO_DIR/deploy/certbot-deploy.sh"
 
 echo "==> sudoers"
 install -o root -g root -m 440 "$REPO_DIR/deploy/sudoers.life-assistant" /etc/sudoers.d/life-assistant
 visudo -c -q -f /etc/sudoers.d/life-assistant
 
-echo "==> firewall"
-if command -v ufw >/dev/null && ufw status | grep -q 'Status: active'; then
-  ufw allow 8000/tcp >/dev/null
-fi
-
 echo "==> enable + start"
 systemctl daemon-reload
 systemctl enable --now life-assistant.service life-assistant-backup.timer
+# certbot ships its own renewal timer; make sure it is active for cert refresh.
+systemctl enable --now certbot.timer 2>/dev/null || true
 
 echo
-echo "done. logs: journalctl -u life-assistant -f"
+echo "==============================================================="
+echo "  Life Assistant ready"
+echo "  URL:  https://$HOSTNAME_SSLIP/"
+if [ -n "$SEED_LOGIN_PASS" ]; then
+  echo "  Password: $SEED_LOGIN_PASS"
+  echo "  (rotate later with:  make set-password PASSWORD=<new>)"
+fi
+echo "==============================================================="
+echo
+echo "Privacy notes:"
+echo "  - Traffic is end-to-end TLS between your browser and this server."
+echo "  - DNS for $HOSTNAME_SSLIP is served by sslip.io (sees lookups, not content)."
+echo "  - To swap in your own domain later, see deploy/README.md."
+echo
+echo "Logs: journalctl -u life-assistant -f"

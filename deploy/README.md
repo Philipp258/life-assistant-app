@@ -1,23 +1,34 @@
 # Deploying Life Assistant
 
-Single-VPS, single-process deploy. uvicorn binds `0.0.0.0:8000`, serves
-the built SPA and the `/api/*` routes from one process. SQLite + `data/`
-lives under `/var/lib/life-assistant/`. systemd supervises. Life Assistant can self-update
+Single-VPS, single-process deploy. uvicorn binds `0.0.0.0:443` directly, with
+its own TLS termination — no reverse proxy. It serves the built SPA and the
+`/api/*` routes from one process. SQLite + `data/` lives under
+`/var/lib/life-assistant/`. systemd supervises. Life Assistant can self-update
 via a chat tool that triggers `life-assistant-update.service`.
 
-## Why no DNS / TLS yet
+## TLS by default
 
-The current setup runs on a public IP without a domain or TLS. Traffic is
-plain HTTP. To stop random scans from using your configured provider credentials,
-the backend has an HTTP basic-auth middleware in front of every route except
-`/api/health`. Credentials live in `/etc/life-assistant/life-assistant.env`.
-This is a stop-gap — once you wire DNS, drop Caddy in front and replace
-basic auth with a real session cookie.
+`install.sh` derives a stable hostname from the VPS public IP via
+[sslip.io](https://sslip.io) — e.g. `1-2-3-4.sslip.io` resolves straight back
+to `1.2.3.4`. It then runs certbot in `--standalone` mode to obtain a real
+Let's Encrypt certificate for that name, drops the cert into
+`/etc/life-assistant/tls/`, and starts uvicorn with `--ssl-keyfile` /
+`--ssl-certfile` flags. No domain purchase, no reverse proxy, no manual DNS
+step. The cert renews automatically via `certbot.timer`; the renewal hook at
+`/etc/letsencrypt/renewal-hooks/deploy/life-assistant.sh` re-copies the new
+cert and restarts the service.
+
+What sslip.io sees: DNS lookups for the encoded hostname. They do not see
+HTTPS traffic, which goes directly between the browser and your VPS.
+
+If you would rather use your own domain, see
+[Custom domain](#custom-domain) below. If you would rather not have any public
+HTTPS endpoint at all, see [Tailnet-only deployment](#tailnet-only-deployment).
 
 ## Prerequisites
 
-- Ubuntu 24.04 VPS, root SSH access, public IP
-- Port 8000 open
+- Ubuntu 24.04 VPS, root SSH access, public IPv4
+- Ports 80 (for ACME) and 443 (for the app) open
 - At least one supported chat provider credential for in-app setup
 
 ## Install
@@ -28,23 +39,43 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/deploy/install.
   | LIFE_ASSISTANT_REPO_URL=https://github.com/<owner>/<repo>.git bash
 ```
 
-The installer prints the generated login password at the end. Save it.
+The installer prints the HTTPS URL and the generated login password at the
+end. Save them.
 
-Then:
+Open the printed URL, sign in with the printed password, finish provider
+setup in the UI, then send a chat. Done.
 
-```bash
-systemctl restart life-assistant
-```
+## Custom domain
 
-Browse to `http://<vps-ip>:8000/`, sign in with the printed password, finish
-provider setup in the UI, then send a chat. Done.
+If you own a domain (e.g. `la.example.com`) and would rather not use the
+sslip.io URL:
 
-## HTTPS without a domain
+1. Point an `A` record at the VPS public IP and wait for it to propagate.
+2. On the VPS:
 
-Push notifications and microphone access require HTTPS. If you do not own a
-domain, see [`/docs/https-no-domain.md`](../frontend/public/docs/https-no-domain.md)
-for a thin Tailscale Serve setup that gives Life Assistant a stable `https://*.ts.net` URL.
-Once Life Assistant is reachable over HTTPS, the in-app setup flow can take over.
+   ```bash
+   sudo systemctl stop life-assistant
+   sudo certbot certonly --standalone -d la.example.com \
+     --agree-tos -m you@example.com -n
+   sudo /etc/letsencrypt/renewal-hooks/deploy/life-assistant.sh
+   sudo systemctl start life-assistant
+   ```
+
+3. (Optional) Revoke / delete the old sslip.io cert with
+   `sudo certbot delete --cert-name <old-hostname>` to keep the renewal list
+   clean. Only do this after the new cert is loaded successfully.
+
+The deploy hook always copies the most recent lineage from
+`/etc/letsencrypt/live/`, so as long as there is exactly one active cert,
+uvicorn picks it up on the next restart.
+
+## Tailnet-only deployment
+
+For maximum privacy (no public TLS endpoint, no third-party DNS), deploy on
+the tailnet instead. Skip the certbot step by uninstalling certbot or by
+having the firewall closed during install (the script will fail loud at the
+cert step; bind uvicorn to `127.0.0.1:8000` afterwards), then expose it via
+Tailscale Serve — see [`/docs/https-no-domain.md`](../frontend/public/docs/https-no-domain.md).
 
 ## Self-update from chat
 
@@ -165,11 +196,13 @@ If a migration broke things, restore from the latest tarball (see
 | `/var/lib/life-assistant/data/life_assistant.db`      | life-assistant:life-assistant   | SQLite (+ WAL sidecars)              |
 | `/var/lib/life-assistant/backups/`          | life-assistant:life-assistant   | Daily snapshots, last 7              |
 | `/etc/life-assistant/life-assistant.env`              | root:life-assistant 640 | Secrets                            |
+| `/etc/life-assistant/tls/{cert,key}.pem`              | life-assistant:life-assistant 640 | TLS cert + key (copied from Let's Encrypt on renewal) |
+| `/etc/letsencrypt/`                                   | root | Let's Encrypt state + cert lineage             |
+| `/etc/letsencrypt/renewal-hooks/deploy/life-assistant.sh` | root:root 755 | Post-renewal: re-copy cert, restart service |
 | `/etc/systemd/system/life-assistant*.{service,timer}` | root | systemd units                  |
 | `/etc/sudoers.d/life-assistant`             | root:root 440 | Limited sudo for restart + update  |
 
 ## Follow-ups (not in this deploy)
 
-- DNS + TLS via Caddy (replace basic-auth with session cookies)
 - GitHub Actions push-to-deploy (currently agent-triggered or manual)
 - Off-box backup destination (S3/B2)
