@@ -49,8 +49,7 @@ def parse_message(row: Message) -> ModelMessage | None:
     """Validate one row's `parts_json` into a typed pydantic-ai ModelMessage.
 
     Returns None for rows whose blob fails validation (corrupted or
-    written by a prior, incompatible schema). Lets callers walk
-    `msg.parts` with isinstance instead of poking dict[str, Any].
+    written by a prior, incompatible schema).
     """
     try:
         return ModelMessagesTypeAdapter.validate_python([row.parts_json])[0]

@@ -43,10 +43,6 @@ BINARY_SNIFF_BYTES = 8192
 
 
 def _err(exc: Exception) -> dict[str, Any]:
-    # Returns dict[str, Any] (not ErrorEnvelope) so tool functions can
-    # mix this into their wider envelopes — `do_read_file` for example
-    # returns either `{lines, total, offset, limit, ...}` or this error
-    # shape, and the union of the two is dict[str, Any].
     return {"error": str(exc)}
 
 

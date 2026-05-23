@@ -71,8 +71,8 @@ def list_tasks(
                 tasks, next_cursor = service.list_done_tasks(
                     session,
                     labels=label,
-                    assignee=assignee,  # type: ignore[arg-type] -- FastAPI Query yields raw str; service validates as Assignee Literal
-                    due=due,  # type: ignore[arg-type] -- FastAPI Query yields raw str; service validates as DueWindow Literal
+                    assignee=assignee,  # type: ignore[arg-type]
+                    due=due,  # type: ignore[arg-type]
                     cursor=cursor,
                     limit=limit,
                 )
@@ -85,9 +85,9 @@ def list_tasks(
         tasks = service.list_tasks(
             session,
             labels=label,
-            assignee=assignee,  # type: ignore[arg-type] -- FastAPI Query yields raw str; service validates as Assignee Literal
-            statuses=status,  # type: ignore[arg-type] -- FastAPI Query yields raw list[str]; service validates as list[TaskStatus]
-            due=due,  # type: ignore[arg-type] -- FastAPI Query yields raw str; service validates as DueWindow Literal
+            assignee=assignee,  # type: ignore[arg-type]
+            statuses=status,  # type: ignore[arg-type]
+            due=due,  # type: ignore[arg-type]
             done=done,
         )
         return {"tasks": [task_to_read(t) for t in tasks]}

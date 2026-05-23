@@ -277,11 +277,6 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
                             },
                         )
 
-    # dict[str, Any] (rather than a TypedDict) because pydantic-ai's
-    # `agent.iter(**kwargs)` accepts a large heterogeneously-typed
-    # kwargs set declared in the library, and we only thread a subset
-    # plus the optional `output_type` switch below — typing the dict to
-    # a local TypedDict here would just duplicate the upstream signature.
     iter_kwargs: dict[str, Any] = dict(
         message_history=history,
         deps=AgentDeps(session_id=session_id, voice_mode=voice),

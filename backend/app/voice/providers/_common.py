@@ -94,12 +94,7 @@ def audio_format_for_input(
 
 
 def extract_openai_text(payload: object) -> str:
-    """Pull the text out of an OpenAI-style chat completion response.
-
-    `payload` is the parsed JSON body of a third-party HTTP response, so
-    its shape is genuinely dynamic — we defensively isinstance-check
-    every layer rather than trusting a static schema.
-    """
+    """Pull the text out of an OpenAI-style chat completion response."""
     if not isinstance(payload, dict):
         return ""
     choices = payload.get("choices")

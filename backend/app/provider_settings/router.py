@@ -43,9 +43,6 @@ legacy_router = APIRouter(prefix="/settings", tags=["settings"])
 
 def _serialize(row: ProviderSettings) -> ProviderSettingsOut:
     preferred_raw = row.preferred_chat_provider
-    # The `in SUPPORTED_CHAT_PROVIDERS` check proves membership at
-    # runtime, but pyrefly does not narrow `str` to the Literal via
-    # `in frozenset[Literal]`; the cast records the proof.
     preferred: ChatProvider | None = (
         cast(ChatProvider, preferred_raw)
         if preferred_raw in service.SUPPORTED_CHAT_PROVIDERS
