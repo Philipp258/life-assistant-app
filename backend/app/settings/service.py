@@ -17,8 +17,6 @@ SUPPORTED_RUNTIME_SETTINGS: tuple[str, ...] = (
     "brave_api_key",
     "vad_timeout_ms",
     "voice_playback_speed",
-    "assistant_name",
-    "user_name",
 )
 DEFAULT_VAD_TIMEOUT_MS = 4_000
 MIN_VAD_TIMEOUT_MS = 250
@@ -26,8 +24,6 @@ MAX_VAD_TIMEOUT_MS = 30_000
 DEFAULT_VOICE_PLAYBACK_SPEED = 1.15
 MIN_VOICE_PLAYBACK_SPEED = 0.5
 MAX_VOICE_PLAYBACK_SPEED = 2.0
-IDENTITY_NAME_KEYS: tuple[str, ...] = ("assistant_name", "user_name")
-MAX_IDENTITY_NAME_LEN = 64
 
 
 def _validate_key(key: str) -> None:
@@ -38,13 +34,6 @@ def _validate_key(key: str) -> None:
 
 
 def _validate_value(key: str, value: str) -> str:
-    if key in IDENTITY_NAME_KEYS:
-        stripped = value.strip()
-        if not stripped:
-            raise ValueError(f"{key} must be non-empty.")
-        if len(stripped) > MAX_IDENTITY_NAME_LEN:
-            raise ValueError(f"{key} must be at most {MAX_IDENTITY_NAME_LEN} characters.")
-        return stripped
     if value == "":
         return value
     if key == "vad_timeout_ms":

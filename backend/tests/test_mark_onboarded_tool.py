@@ -31,9 +31,7 @@ def seeded_user(_test_db):
     with SessionLocal() as db:
         user = db.scalars(select(User)).first()
         user.onboarded_at = None
-        db.query(AppSetting).filter(
-            AppSetting.key.in_(["assistant_name", "user_name"])
-        ).delete()
+        db.query(AppSetting).filter(AppSetting.key.in_(["assistant_name", "user_name"])).delete()
         db.commit()
         return user.id
 

@@ -65,13 +65,9 @@ def get_identity(db: Session = Depends(get_session)) -> IdentityOut:
 
 
 @router.patch("/identity")
-def patch_identity(
-    body: IdentityPatch, db: Session = Depends(get_session)
-) -> IdentityOut:
+def patch_identity(body: IdentityPatch, db: Session = Depends(get_session)) -> IdentityOut:
     if body.assistant_name is None and body.user_name is None:
-        raise HTTPException(
-            status_code=422, detail="provide assistant_name and/or user_name"
-        )
+        raise HTTPException(status_code=422, detail="provide assistant_name and/or user_name")
     try:
         if body.assistant_name is not None:
             identity.set_assistant_name(db, body.assistant_name)

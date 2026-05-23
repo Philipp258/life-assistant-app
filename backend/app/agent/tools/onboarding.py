@@ -14,12 +14,12 @@ from typing import Any
 from pydantic_ai import Agent
 
 from app.agent.deps import AgentDeps
+from app.db import SessionLocal
+from app.knowledge import identity
+from app.users.service import mark_onboarded
 
 
 def do_set_assistant_name(name: str) -> dict[str, Any]:
-    from app.db import SessionLocal
-    from app.knowledge import identity
-
     with SessionLocal() as db:
         try:
             stored = identity.set_assistant_name(db, name)
@@ -29,9 +29,6 @@ def do_set_assistant_name(name: str) -> dict[str, Any]:
 
 
 def do_set_user_name(name: str) -> dict[str, Any]:
-    from app.db import SessionLocal
-    from app.knowledge import identity
-
     with SessionLocal() as db:
         try:
             stored = identity.set_user_name(db, name)
@@ -41,10 +38,6 @@ def do_set_user_name(name: str) -> dict[str, Any]:
 
 
 def do_mark_onboarded() -> dict[str, Any]:
-    from app.db import SessionLocal
-    from app.knowledge import identity
-    from app.users.service import mark_onboarded
-
     with SessionLocal() as db:
         if not identity.identity_complete(db):
             return {"ok": False, "error": "identity_incomplete"}

@@ -465,7 +465,7 @@ def test_ask_user_choice_ends_wake_before_empty_output_validation_retry(
         p.get("part_kind") == "tool-return" and p.get("tool_call_id") == "choice-1" for p in parts
     )
     assert not any(
-        "Assistant hit an error" in text for text in _task_chat_text_messages(Session, chat_id)
+        "Atlas hit an error" in text for text in _task_chat_text_messages(Session, chat_id)
     )
 
 
@@ -893,7 +893,7 @@ def test_wake_error_appends_retry_notice_to_task_chat(_test_db):
     assert result.outcome == "errored"
     texts = _task_chat_text_messages(Session, chat_id)
     assert any(
-        "Assistant hit an error" in t and "retry" in t and "RuntimeError: provider down" in t
+        "Atlas hit an error" in t and "retry" in t and "RuntimeError: provider down" in t
         for t in texts
     ), texts
 
@@ -1558,7 +1558,7 @@ def test_wake_partial_progress_persisted_then_error_marker(_test_db):
 
     # The runner's retry notice still lands after the partial turn.
     texts = _task_chat_text_messages(Session, chat_id)
-    assert any("Assistant hit an error" in t and "RuntimeError: provider down" in t for t in texts)
+    assert any("Atlas hit an error" in t and "RuntimeError: provider down" in t for t in texts)
 
 
 def test_close_dangling_tool_calls_appends_synthetic_returns():

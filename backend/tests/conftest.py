@@ -335,9 +335,29 @@ def _test_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(set_password_mod, "SessionLocal", TestSession, raising=True)
 
+    from app.users import service as users_service_mod
+
+    monkeypatch.setattr(users_service_mod, "SessionLocal", TestSession, raising=True)
+
+    from app.provider_settings import service as provider_service_mod
+
+    monkeypatch.setattr(provider_service_mod, "SessionLocal", TestSession, raising=True)
+
+    from app.voice import service as voice_service_mod
+
+    monkeypatch.setattr(voice_service_mod, "SessionLocal", TestSession, raising=True)
+
     from app.knowledge import identity as identity_mod
 
     monkeypatch.setattr(identity_mod, "SessionLocal", TestSession, raising=True)
+
+    from app import agent as agent_mod
+
+    monkeypatch.setattr(agent_mod, "SessionLocal", TestSession, raising=True)
+
+    from app.agent.tools import onboarding as onboarding_tools_mod
+
+    monkeypatch.setattr(onboarding_tools_mod, "SessionLocal", TestSession, raising=True)
 
     from app.auth import router as auth_router_mod
 

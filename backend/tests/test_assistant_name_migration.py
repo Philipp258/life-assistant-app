@@ -47,9 +47,7 @@ def test_imports_name_and_strips_line(
     from app.settings.models import AppSetting
 
     _wipe_seed(db_session)
-    (core_root / "behavior.md").write_text(
-        "**Name:** Atlas\n\nBe terse.\n", encoding="utf-8"
-    )
+    (core_root / "behavior.md").write_text("**Name:** Atlas\n\nBe terse.\n", encoding="utf-8")
 
     with db_session.bind.begin() as conn:
         migration_module.apply_to(conn, core_root / "behavior.md")
@@ -122,13 +120,7 @@ def test_strips_only_top_of_file(
     from app.settings.models import AppSetting
 
     _wipe_seed(db_session)
-    body = (
-        "**Name:** Atlas\n"
-        "\n"
-        "Be terse.\n"
-        "\n"
-        "Earlier draft said **Name:** something else.\n"
-    )
+    body = "**Name:** Atlas\n\nBe terse.\n\nEarlier draft said **Name:** something else.\n"
     (core_root / "behavior.md").write_text(body, encoding="utf-8")
 
     with db_session.bind.begin() as conn:
