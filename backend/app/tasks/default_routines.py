@@ -29,7 +29,6 @@ from app.tasks.models import IntervalUnit, Task
 from app.tasks.schemas import TaskCreate
 from app.tasks.service import create_task
 
-REFLECTION_TITLE = "Weekly reflection"
 CONSOLIDATION_TITLE = "Daily consolidation"
 COLLECT_TITLE = "Collect improvement items"
 PROCESS_TITLE = "Process improvement items"
@@ -37,93 +36,19 @@ DISK_SPACE_TITLE = "Weekly disk space check"
 TASK_LOG_MAINTENANCE_TITLE = "Task log maintenance"
 
 
-REFLECTION_BRIEF = """\
-You wake to review recent activity and propose core-memory updates worth \
-saving.
-
-## Look back in detail
-
-Use the previous completion timestamp in the Run context block as the \
-start of the window; on the first cycle, look back one cadence. Review \
-all main-chat and task activity since then.
-
-## Think across abstraction levels
-
-Core memory (`about_user.md` and `behavior.md`, already loaded into your \
-system prompt above) can hold several levels of learning:
-
-- Hard rules — "never X".
-- Gentler preferences — "lean toward Y when there's a choice".
-- Role / attribute facts about the user — "background: data scientist", \
-"lives in Berlin".
-- Meta-patterns — "phrases requests as questions when uncertain", \
-"prefers fewer options to more".
-
-When you spot something, don't lock onto the most specific framing. One \
-observation often supports more than one framing. A rejected nut-heavy \
-recipe might mean "no nuts", "lean toward lighter food", or "I'm suggesting \
-too narrow a range". Pick the framing that generalises without overfitting.
-
-## Propose updates via choice
-
-For each candidate update, call `ask_user_choice` with 2–4 phrasings at \
-different abstraction levels plus "skip". Leave `allow_free_text=True` so \
-the user can word it themselves.
-
-The user's pick comes back as their next message (the tool reassigns to \
-the user automatically). Then:
-
-- Draft the *full new content* of the file you'd write to (preserving \
-everything you want to keep).
-- Show it in the chat.
-- Call `ask_user_choice("Save this version?", ["Save", "Edit it", \
-"Don't save"])` to confirm.
-- On "Save", call `save_core_memory(name, body)`. On "Edit it", revise \
-per their notes and confirm again. On anything else, drop it.
-
-Move on to the next observation.
-
-## Done
-
-Once every observation is resolved — or you found nothing worth raising \
-— call `complete_task`. The task auto-respawns for the next cycle.
-
-Tone: terse, observational, not eager. You're surfacing what you noticed \
-and asking if it's worth remembering. Empty reflections are fine — \
-saying nothing is better than padding."""
-
-
 CONSOLIDATION_BRIEF = """\
 You wake to harvest durable bits from recent main-chat activity and \
 finished tasks into the knowledge store. The main chat is ephemeral for \
-you — anything worth keeping has to land in `data/knowledge/` or it's \
+you — anything worth keeping has to land in knowledge or it's \
 gone from your view.
 
 ## What to look at
 
 Window starts at the previous completion timestamp in the Run context \
 block; on the first cycle, look back one cadence. Find main-chat \
-messages and tasks completed in that window. The main chat is the \
-session whose `task_id` is null; in practice it is the lowest-id session \
-unless an old install is unusual.
-
-## What to keep
-
-Keep durable signal: facts, preferences, learnings, and follow-ups the user \
-mentioned. Skip greetings, one-off chitchat, and anything already captured. \
-Prefer fewer, denser notes over many small ones; duplicate-note pollution \
-is the main risk on a short cadence.
-
-Merge into an existing related knowledge note when one fits; otherwise \
-create a note under a sensible folder. Skip items that don't add anything \
-to what's already stored.
-
-Call `complete_task` when done. The task auto-respawns for the next cycle.
-
-Tone: terse, observational, low-friction. Saying "nothing notable" and \
-completing the task is a fine outcome on quiet cycles. Do not narrate \
-the process — the chat record is for your own continuity across runs, \
-not a report."""
+messages and tasks completed in that window. 
+Create knowledge for things that seem worth preserving.
+"""
 
 
 COLLECT_BRIEF = """\
@@ -136,8 +61,7 @@ inefficient, confusing, or otherwise worth learning from.
 
 Window starts at the previous completion timestamp in the Run context \
 block; on the first cycle, look back one cadence. Review main-chat and \
-task activity in that window, reading task chats when their conversation \
-looks relevant.
+task activity in that window.
 
 ## What counts
 
@@ -176,19 +100,10 @@ done; the task auto-respawns for the next cycle."""
 
 
 DISK_SPACE_BRIEF = """\
-You wake to keep an eye on disk space on the host machine this \
-assistant runs on. The goal is early warning: catch filesystems, \
-inodes, or directories trending toward full before they affect the app \
-or host, so the user has time to react.
-
-Inspect usage read-only — never delete, truncate, rotate, compact, or \
-otherwise clean up files unless the user has explicitly approved the \
-specific cleanup first. Prefer light checks over aggressive scans.
-
-Surface only what matters. If everything looks healthy, say so briefly \
-and stop. If something is concerning, name the filesystem or path, the \
-current usage, why it matters, and a sensible next step the user can \
-weigh in on."""
+Please check disk space usage of the machine you are running on via the bash tool.
+Clean up things where you are 100% certain they are fine to clean. Otherwise raise potential issues
+in the completion message.
+"""
 
 
 TASK_LOG_MAINTENANCE_BRIEF = """\
@@ -268,18 +183,10 @@ class RoutineSpec:
     labels: tuple[str, ...] = field(default_factory=tuple)
 
 
-# Cadence/time mirrors the old seed migrations: reflection Sun 09:00,
-# consolidation 03:00, collect 04:00, process 05:00 (staggered so they
-# don't fight for the runner), disk-space Mon 10:00. All UTC.
+# Cadence/time mirrors the old seed migrations: consolidation 03:00,
+# collect 04:00, process 05:00 (staggered so they don't fight for the
+# runner), disk-space Mon 10:00. All UTC.
 DEFAULT_ROUTINES: tuple[RoutineSpec, ...] = (
-    RoutineSpec(
-        key="weekly-reflection",
-        title=REFLECTION_TITLE,
-        description=REFLECTION_BRIEF,
-        interval_unit="week",
-        interval_count=1,
-        schedule=lambda now: _next_weekday_at(now, weekday=6, hour=9),
-    ),
     RoutineSpec(
         key="daily-consolidation",
         title=CONSOLIDATION_TITLE,
@@ -329,7 +236,6 @@ DEFAULT_ROUTINES: tuple[RoutineSpec, ...] = (
 
 
 LEGACY_TITLE_MATCHES: dict[str, tuple[str, ...]] = {
-    "weekly-reflection": (REFLECTION_TITLE,),
     "daily-consolidation": (CONSOLIDATION_TITLE,),
     # The production routine drifted to "opportunities" before this ledger
     # existed. Treat that as the same shipped default instead of seeding the

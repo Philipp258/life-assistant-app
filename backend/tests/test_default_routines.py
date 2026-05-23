@@ -23,8 +23,6 @@ from app.tasks.default_routines import (
     DISK_SPACE_BRIEF,
     DISK_SPACE_TITLE,
     PROCESS_BRIEF,
-    REFLECTION_BRIEF,
-    REFLECTION_TITLE,
     TASK_LOG_MAINTENANCE_BRIEF,
     ensure_default_routines,
 )
@@ -226,11 +224,6 @@ def test_disk_space_gets_inbox_label_when_present(_test_db):
 
 def test_brief_constants_are_the_final_seed_text(_test_db):
     """Guard the core routine-brief invariants that old migrations used to cover."""
-    assert REFLECTION_TITLE == "Weekly reflection"
-    assert "## Think across abstraction levels" in REFLECTION_BRIEF
-    assert "previous completion timestamp in the Run context" in REFLECTION_BRIEF
-    assert "ask_user_choice" in REFLECTION_BRIEF
-    assert "reassign_task('user')" not in REFLECTION_BRIEF  # old brief's phrasing
     assert CONSOLIDATION_TITLE == "Daily consolidation"
     assert "harvest durable bits" in CONSOLIDATION_BRIEF
 
@@ -254,7 +247,6 @@ def test_briefs_do_not_hardcode_interval_windows():
         "next week",
     )
     for brief in (
-        REFLECTION_BRIEF,
         CONSOLIDATION_BRIEF,
         COLLECT_BRIEF,
         PROCESS_BRIEF,
