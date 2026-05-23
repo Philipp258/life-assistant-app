@@ -15,9 +15,11 @@ import secrets
 
 import bcrypt
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.datetime_utils import utc_now
+from app.db import SessionLocal
 from app.users.models import User
 
 log = logging.getLogger(__name__)
@@ -44,10 +46,6 @@ def is_onboarding() -> bool:
     ritual on every caller. The lifespan bootstrap is responsible for
     seeding the row before real requests reach the agent.
     """
-    from sqlalchemy.exc import OperationalError
-
-    from app.db import SessionLocal
-
     try:
         with SessionLocal() as db:
             user = _get_singleton(db)

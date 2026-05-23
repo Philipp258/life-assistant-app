@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session as SASession
 from app.agent.deps import AgentDeps
 from app.agent.tools._paging import normalize_page, paginate
 from app.agent.tools._task_scope import current_task_id, only_in_task_chat
+from app.chat.service import latest_task_handoff, save_task_handoff
 from app.datetime_utils import normalize_to_naive_utc, serialize_utc, utc_now
 from app.db import SessionLocal
 from app.tasks import service
@@ -272,8 +273,6 @@ def _has_recorded_handoff(session: SASession, task: Task) -> bool:
     assignee change must still go through (handled by the callers); only
     redundant repeats are blocked.
     """
-    from app.chat.service import latest_task_handoff
-
     return latest_task_handoff(session, task.chat_session_id) is not None
 
 
@@ -305,8 +304,6 @@ def do_complete_task(task_id: int, handoff: str) -> dict[str, Any]:
         task = service.update_task(session, task_id, TaskUpdate(is_done=True))
         if task is None:
             return {"error": "task not found", "task_id": task_id}
-        from app.chat.service import save_task_handoff
-
         save_task_handoff(session, task.chat_session_id, text)
         return _summarize(task)
 
@@ -331,8 +328,6 @@ def do_reassign_task(task_id: int, assignee: Assignee, handoff: str) -> dict[str
         task = service.update_task(session, task_id, TaskUpdate(assignee=assignee))
         if task is None:
             return {"error": "task not found", "task_id": task_id}
-        from app.chat.service import save_task_handoff
-
         save_task_handoff(session, task.chat_session_id, text)
         return _summarize(task)
 
@@ -368,8 +363,6 @@ def do_reschedule_task(task_id: int, do_at: datetime, handoff: str) -> dict[str,
         task = service.reschedule_task(session, task_id, do_at)
         if task is None:
             return {"error": "task not found", "task_id": task_id}
-        from app.chat.service import save_task_handoff
-
         save_task_handoff(session, task.chat_session_id, text)
         return _summarize(task)
 

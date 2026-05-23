@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from app.config import DEFAULTS_SKILLS_DIR, SKILLS_DIR
+from app.config import DEFAULTS_SKILLS_DIR, REPO_ROOT, SKILLS_DIR
 from app.knowledge.store import _parse_frontmatter
 
 SKILL_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -66,8 +66,6 @@ def _validate_name(name: str) -> None:
 
 def _rel_path(p: Path) -> str:
     """Return POSIX path relative to repo root, for surfacing in API + prompt."""
-    from app.config import REPO_ROOT
-
     try:
         return p.resolve().relative_to(REPO_ROOT.resolve()).as_posix()
     except ValueError:

@@ -41,6 +41,7 @@ from app.agent.deps import AgentDeps
 from app.agent.tools._paging import normalize_page
 from app.agent.tools._task_scope import current_task_id, only_in_task_chat
 from app.chat.models import ChatSession, Message
+from app.chat.service import get_or_create_main_session, parse_message, save_task_handoff
 from app.datetime_utils import normalize_to_naive_utc, serialize_utc
 from app.db import SessionLocal
 from app.tasks import service as tasks_service
@@ -132,8 +133,6 @@ def do_list_chat_messages(
             .limit(safe_limit)
         ).all()
 
-    from app.chat.service import parse_message
-
     items: list[dict[str, Any]] = []
     for row in rows:
         msg = parse_message(row)
@@ -176,8 +175,6 @@ def do_ask_user_choice(
         task = tasks_service.update_task(session, task_id, TaskUpdate(assignee="user"))
         if task is None:
             return {"error": "task not found", "task_id": task_id}
-        from app.chat.service import save_task_handoff
-
         options_text = "\n".join(f"- {option}" for option in options)
         save_task_handoff(
             session,
@@ -207,8 +204,6 @@ def do_read_main_chat_recent(limit: int = 20) -> list[dict[str, Any]]:
     `search_main_chat_history` instead. Returns a compact role / text /
     created_at triple per message.
     """
-    from app.chat.service import get_or_create_main_session
-
     with SessionLocal() as session:
         main = get_or_create_main_session(session)
         main_id = main.id
@@ -222,8 +217,6 @@ def do_read_main_chat_recent(limit: int = 20) -> list[dict[str, Any]]:
             .limit(limit)
         )
         rows = list(session.scalars(stmt).all())
-
-    from app.chat.service import parse_message
 
     rows.reverse()  # latest N, returned oldest-first
     out: list[dict[str, Any]] = []

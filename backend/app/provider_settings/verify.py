@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import httpx
 
+from app.agent.providers.codex_auth import AuthInvalidError, load_session_from_json
 from app.agent.providers.openrouter import OPENROUTER_BASE_URL
 from app.agent.providers.zai import DEFAULT_ZAI_ENDPOINT, ZAI_ENDPOINT_BASE_URLS
 
@@ -83,8 +84,6 @@ def verify_zai(api_key: str, endpoint: str | None) -> None:
 
 
 def verify_codex(auth_json: str) -> None:
-    from app.agent.providers.codex_auth import AuthInvalidError, load_session_from_json
-
     try:
         load_session_from_json(auth_json)
     except AuthInvalidError as exc:
