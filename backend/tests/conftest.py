@@ -84,6 +84,16 @@ def _reset_runner_state():
 
 
 @pytest.fixture(autouse=True)
+def _reset_login_rate_limit():
+    """Login rate limit holds process-global per-IP counters."""
+    from app.auth import rate_limit
+
+    rate_limit._reset_for_tests()
+    yield
+    rate_limit._reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _allow_model_requests():
     """Reset pydantic-ai's ALLOW_MODEL_REQUESTS before each test.
 
