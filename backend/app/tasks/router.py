@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from sqlalchemy import select
 
@@ -51,7 +53,7 @@ def list_tasks(
     done: bool | None = Query(default=None),
     cursor: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
-) -> dict:
+) -> dict[str, Any]:
     """List tasks for the two-axis Tasks screen.
 
     - no `done` → legacy slice (open-before-done) for old saved views.

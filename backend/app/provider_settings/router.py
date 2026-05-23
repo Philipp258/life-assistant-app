@@ -9,7 +9,7 @@ uses.
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -44,7 +44,9 @@ legacy_router = APIRouter(prefix="/settings", tags=["settings"])
 def _serialize(row: ProviderSettings) -> ProviderSettingsOut:
     preferred_raw = row.preferred_chat_provider
     preferred: ChatProvider | None = (
-        preferred_raw if preferred_raw in service.SUPPORTED_CHAT_PROVIDERS else None
+        cast(ChatProvider, preferred_raw)
+        if preferred_raw in service.SUPPORTED_CHAT_PROVIDERS
+        else None
     )
     return ProviderSettingsOut(
         preferred_chat_provider=preferred,

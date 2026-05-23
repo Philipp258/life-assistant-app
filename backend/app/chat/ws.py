@@ -105,7 +105,7 @@ async def chat_ws(websocket: WebSocket) -> None:
         snapshot — idempotent on the client)."""
         async with pubsub.subscribe(session_id) as queue:
             await outgoing.put(_snapshot(session_id))
-            state = {"dirty": False, "flush": None}  # type: dict[str, Any]
+            state: dict[str, Any] = {"dirty": False, "flush": None}
 
             async def _coalesced_snapshot() -> None:
                 try:
@@ -206,7 +206,8 @@ async def chat_ws(websocket: WebSocket) -> None:
             sid = _sid(data)
             if sid is None or not _session_exists(sid):
                 return
-            cmd = commands.get(data.get("name"))
+            name = data.get("name")
+            cmd = commands.get(name) if isinstance(name, str) else None
             if cmd is not None:
                 # Slash handlers are quick DB stamps (e.g. /new archives
                 # rows). Run inline; a slow handler would briefly block

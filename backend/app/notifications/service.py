@@ -190,6 +190,9 @@ def _send_one(subscription: PushSubscription, payload: dict[str, Any]) -> int | 
     private_key = _resolve_private_key_path()
     if private_key is None:
         return None
+    vapid_contact_email = settings.vapid_contact_email
+    if vapid_contact_email is None:
+        return None
     try:
         webpush(
             subscription_info={
@@ -198,7 +201,7 @@ def _send_one(subscription: PushSubscription, payload: dict[str, Any]) -> int | 
             },
             data=json.dumps(payload),
             vapid_private_key=private_key,
-            vapid_claims={"sub": settings.vapid_contact_email},
+            vapid_claims={"sub": vapid_contact_email},
         )
         return None
     except WebPushException as exc:

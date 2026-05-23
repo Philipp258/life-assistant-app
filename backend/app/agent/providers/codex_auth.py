@@ -45,7 +45,7 @@ import json
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 import httpx
 
@@ -83,7 +83,7 @@ class CodexSession:
     account_id: str | None = None
     plan_type: str | None = None
     id_token_raw: str | None = None
-    raw: dict | None = None
+    raw: dict[str, Any] | None = None
 
     @property
     def is_expired(self) -> bool:
@@ -94,7 +94,7 @@ class CodexSession:
 # ── JWT helpers (no signature verification) ───────────────────────
 
 
-def _decode_jwt_payload(jwt: str) -> dict:
+def _decode_jwt_payload(jwt: str) -> dict[str, Any]:
     parts = jwt.split(".")
     if len(parts) != 3:
         raise ValueError("Invalid JWT format")

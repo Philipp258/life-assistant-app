@@ -45,8 +45,8 @@ def _archive_reason(row: Message) -> str:
 
 
 def _render_row(row: Message) -> dict[str, Any]:
-    raw = row.parts_json if isinstance(row.parts_json, dict) else {}
-    parts = raw.get("parts", [])
+    raw: dict[str, Any] = row.parts_json if isinstance(row.parts_json, dict) else {}
+    parts = raw.get("parts", []) or []
     return {
         "id": row.id,
         "kind": row.kind,
@@ -111,7 +111,7 @@ def do_read_archived_messages(
     if needle is None:
         total = len(rendered)
         page = rendered[offset : offset + limit]
-        matches = [{"before": [], "match": m, "after": []} for m in page]
+        matches: list[dict[str, Any]] = [{"before": [], "match": m, "after": []} for m in page]
     else:
         hit_idxs = [i for i, r in enumerate(rendered) if needle in r["text"].lower()]
         total = len(hit_idxs)

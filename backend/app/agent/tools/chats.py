@@ -131,8 +131,8 @@ def do_list_chat_messages(
 
     items: list[dict[str, Any]] = []
     for row in rows:
-        raw = row.parts_json if isinstance(row.parts_json, dict) else {}
-        parts = raw.get("parts", [])
+        raw: dict[str, Any] = row.parts_json if isinstance(row.parts_json, dict) else {}
+        parts = raw.get("parts", []) or []
         items.append(
             {
                 "id": row.id,
@@ -222,8 +222,8 @@ def do_read_main_chat_recent(limit: int = 20) -> list[dict[str, Any]]:
     rows.reverse()  # latest N, returned oldest-first
     out: list[dict[str, Any]] = []
     for row in rows:
-        raw = row.parts_json if isinstance(row.parts_json, dict) else {}
-        parts = raw.get("parts", []) if isinstance(raw, dict) else []
+        raw: dict[str, Any] = row.parts_json if isinstance(row.parts_json, dict) else {}
+        parts = raw.get("parts", []) or []
         out.append(
             {
                 "role": role_for(row.kind, parts),

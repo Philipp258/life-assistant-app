@@ -109,7 +109,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic_ai import Agent
 from pydantic_ai.messages import (
@@ -344,7 +344,7 @@ def _session_has_pending_user_input(db: Session, session_id: int) -> bool:
     ).first()
     if row is None or row.kind != "request":
         return False
-    raw = row.parts_json if isinstance(row.parts_json, dict) else {}
+    raw: dict[str, Any] = row.parts_json if isinstance(row.parts_json, dict) else {}
     for part in raw.get("parts", []) or []:
         if isinstance(part, dict) and (
             part.get("part_kind") == "user-prompt" or part.get("kind") == "user-prompt"
@@ -359,7 +359,7 @@ def _is_user_or_relay_input_row(row: Message) -> bool:
         return True
     if row.kind != "request":
         return False
-    raw = row.parts_json if isinstance(row.parts_json, dict) else {}
+    raw: dict[str, Any] = row.parts_json if isinstance(row.parts_json, dict) else {}
     for part in raw.get("parts", []) or []:
         if isinstance(part, dict) and (
             part.get("part_kind") == "user-prompt" or part.get("kind") == "user-prompt"
@@ -517,8 +517,9 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
         kind = resolve_kind(chat)
         task = _get_task_for_session(session_id)
 
-    seen: list = []
+    seen: list[Message] = []
     injected: list[ModelMessage] = []
+    task_history_cursor: int = 0
     if kind == "main":
         # Awaiting `aload_compacted_history` inside the open session is
         # the established pattern (DB calls stay sync; only the optional
@@ -668,7 +669,7 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
                             },
                         )
 
-    iter_kwargs: dict = dict(
+    iter_kwargs: dict[str, Any] = dict(
         message_history=history,
         deps=AgentDeps(session_id=session_id, voice_mode=voice),
         usage_limits=default_usage_limits(),
@@ -791,7 +792,7 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
             # dropped from main history too. The relay side effect already
             # ran and the resumed task re-handoffs later, so this only
             # costs a history breadcrumb — not correctness.
-            pending = [] if silent else final_messages[persisted_count:]
+            pending: list[ModelMessage] = [] if silent else list(final_messages[persisted_count:])
             if pending:
                 # save_new_messages commits — flushing the staged cursor
                 # change on the same session in the same transaction.

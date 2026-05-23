@@ -38,6 +38,7 @@ it surfaces rather than swallow.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Any
 
 from pydantic import BaseModel
 from pydantic_ai import ToolOutput
@@ -80,8 +81,8 @@ SILENCE_OUTPUT = ToolOutput(
 
 def _handoff_text_from_row(row: Message) -> str | None:
     """Pull the handoff body out of a persisted message row, if it is one."""
-    raw = row.parts_json if isinstance(row.parts_json, dict) else {}
-    parts = raw.get("parts", []) if isinstance(raw, dict) else []
+    raw: dict[str, Any] = row.parts_json if isinstance(row.parts_json, dict) else {}
+    parts = raw.get("parts", []) or []
     for part in parts:
         if not isinstance(part, dict):
             continue
@@ -187,7 +188,7 @@ def latest_terminal_event_id(session: Session) -> int | None:
 
 def has_undrained_events(session: Session, consuming_session_id: int) -> bool:
     consumer = session.get(ChatSession, consuming_session_id)
-    if not consumes_terminal_events(consumer):
+    if consumer is None or not consumes_terminal_events(consumer):
         return False
     cursor = consumer.event_cursor_id or 0
     for row in _candidate_rows(session, after_id=cursor):

@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.auth.middleware import SessionAuthMiddleware
@@ -28,7 +29,7 @@ from app.users.router import router as users_router
 from app.voice.router import router as voice_router
 
 
-def seed_repo_defaults(db) -> None:
+def seed_repo_defaults(db: Session) -> None:
     """Materialize repo-shipped defaults that should exist on every install."""
     from app.saved_task_views.defaults import ensure_default_saved_views
     from app.tasks.default_routines import ensure_default_routines

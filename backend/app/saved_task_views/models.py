@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import JSON, Boolean, DateTime, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -17,7 +18,7 @@ class SavedTaskView(Base):
     # JSON shape:
     #   {"labels": ["home"], "assignee": "user" | "assistant" | null,
     #    "statuses": ["open"], "due": "today" | "week" | null}
-    filters_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    filters_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     group_by: Mapped[str] = mapped_column(String(16), nullable=False, default="none")
     sort_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_default: Mapped[bool] = mapped_column(

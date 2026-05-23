@@ -636,8 +636,8 @@ def latest_task_handoff(session: Session, session_id: int) -> str | None:
         .limit(50)
     ).all()
     for row in rows:
-        raw = row.parts_json if isinstance(row.parts_json, dict) else {}
-        parts = raw.get("parts", []) if isinstance(raw, dict) else []
+        raw: dict[str, Any] = row.parts_json if isinstance(row.parts_json, dict) else {}
+        parts = raw.get("parts", []) or []
         for part in parts:
             if not isinstance(part, dict):
                 continue

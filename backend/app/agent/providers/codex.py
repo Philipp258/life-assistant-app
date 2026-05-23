@@ -19,6 +19,7 @@ import asyncio
 import logging
 
 import httpx
+from typing_extensions import override
 from openai import AsyncOpenAI
 from pydantic_ai.models.openai import OpenAIResponsesModel, OpenAIResponsesModelSettings
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -73,6 +74,7 @@ class _CodexAuth(httpx.Auth):
         except Exception:  # pragma: no cover — persist failure is non-fatal
             log.exception("Codex token persist callback failed; refresh will retry next cycle.")
 
+    @override
     async def async_auth_flow(self, request: httpx.Request):
         session = await self._ensure_fresh()
         request.headers["Authorization"] = f"Bearer {session.access_token}"
@@ -81,6 +83,7 @@ class _CodexAuth(httpx.Auth):
         request.headers["OpenAI-Beta"] = "responses=experimental"
         yield request
 
+    @override
     def sync_auth_flow(self, request: httpx.Request):  # pragma: no cover
         raise RuntimeError("Codex auth is async-only; openai SDK is async here.")
 

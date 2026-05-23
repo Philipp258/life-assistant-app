@@ -9,7 +9,7 @@ fallback). `pick_stt` is OpenRouter-only — STT lives there permanently.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
@@ -142,7 +142,7 @@ def pick_chat(db: Session) -> ChatPick:
 
     preferred = row.preferred_chat_provider
     if preferred is not None and preferred in configured:
-        return _build_chat_pick(row, preferred)
+        return _build_chat_pick(row, cast(ChatProvider, preferred))
 
     for candidate in _PREFERENCE_ORDER:
         if candidate in configured:

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.saved_task_views.models import SavedTaskView
 
 GroupBy = Literal["none"]
 Assignee = Literal["user", "assistant"]
@@ -23,7 +25,7 @@ class FilterBlob(BaseModel):
 class SavedTaskViewBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     icon: str | None = Field(default=None, max_length=16)
-    filters: dict = Field(default_factory=dict)
+    filters: dict[str, Any] = Field(default_factory=dict)
     group_by: GroupBy = "none"
 
     @model_validator(mode="after")
@@ -42,7 +44,7 @@ class SavedTaskViewCreate(SavedTaskViewBase):
 class SavedTaskViewUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     icon: str | None = Field(default=None, max_length=16)
-    filters: dict | None = None
+    filters: dict[str, Any] | None = None
     group_by: GroupBy | None = None
     sort_index: int | None = None
     is_default: bool | None = None
@@ -67,7 +69,7 @@ class SavedTaskViewRead(SavedTaskViewBase):
     updated_at: datetime
 
     @classmethod
-    def from_orm_row(cls, row) -> "SavedTaskViewRead":  # noqa: ANN001
+    def from_orm_row(cls, row: SavedTaskView) -> "SavedTaskViewRead":
         return cls.model_validate(
             {
                 "id": row.id,

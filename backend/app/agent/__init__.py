@@ -380,6 +380,7 @@ def build_system_prompt(session_id: int | None, *, voice_mode: bool = False) -> 
     # chats also embed the task identity under that heading so the agent
     # calls tools with the right id (without this, models hallucinate task_ids
     # and have completed unrelated tasks).
+    exposes_task_log = False
     if task is not None:
         fields = [f"- task_id: {task.id}", f"- title: {task.title}"]
         if task.description and task.description.strip():
@@ -390,11 +391,12 @@ def build_system_prompt(session_id: int | None, *, voice_mode: bool = False) -> 
             fields.append(f"- due_at: {serialize_utc(task.due_at)}")
         from app.tasks.task_log import should_expose_task_log
 
-        exposes_task_log = should_expose_task_log(task_log_line=task.task_log_line)
-        if exposes_task_log:
+        task_log_line = task.task_log_line
+        exposes_task_log = should_expose_task_log(task_log_line=task_log_line)
+        if exposes_task_log and task_log_line is not None:
             from app.tasks.task_log import task_log_path
 
-            fields.append(f"- task_log: {task_log_path(task.task_log_line)}")
+            fields.append(f"- task_log: {task_log_path(task_log_line)}")
         role = TASK_PROMPT + "\n\n" + "\n".join(fields)
     else:
         role = GENERAL_PROMPT

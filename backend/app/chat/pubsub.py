@@ -17,7 +17,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from typing import Any
 
-_subscribers: dict[int, set[asyncio.Queue]] = defaultdict(set)
+_subscribers: dict[int, set[asyncio.Queue[dict[str, Any]]]] = defaultdict(set)
 _QUEUE_MAX = 256
 
 
@@ -38,9 +38,9 @@ def publish(session_id: int, event: dict[str, Any]) -> None:
 
 
 @asynccontextmanager
-async def subscribe(session_id: int) -> AsyncIterator[asyncio.Queue]:
+async def subscribe(session_id: int) -> AsyncIterator[asyncio.Queue[dict[str, Any]]]:
     """Subscribe to events for a session for the lifetime of the with-block."""
-    queue: asyncio.Queue = asyncio.Queue(maxsize=_QUEUE_MAX)
+    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=_QUEUE_MAX)
     _subscribers[session_id].add(queue)
     try:
         yield queue

@@ -5,9 +5,9 @@ from __future__ import annotations
 import base64
 import binascii
 from datetime import datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import Select, and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.chat.models import ChatSession, Message
@@ -111,7 +111,13 @@ def _last_msg_subq():
     )
 
 
-def _apply_common_filters(stmt, *, labels, assignee, due):
+def _apply_common_filters(
+    stmt: Select[Any],
+    *,
+    labels: list[str] | None,
+    assignee: Assignee | None,
+    due: DueWindow | None,
+) -> Select[Any]:
     """Label / assignee / due-window filters shared by the open and done
     listing paths. Status predicates stay inline in `list_tasks` (legacy
     path only)."""
@@ -513,6 +519,7 @@ def _spawn_next_recurrence(session: Session, completed: Task, prev_do_at: dateti
     Stall/error counters are not copied — the new row defaults to 0,
     giving each cycle a clean wake-health slate.
     """
+    assert completed.interval_unit is not None and completed.interval_count is not None
     next_do_at = _next_do_at(prev_do_at, completed.interval_unit, completed.interval_count)
     new_chat = ChatSession(title=completed.title[:128])
     session.add(new_chat)
