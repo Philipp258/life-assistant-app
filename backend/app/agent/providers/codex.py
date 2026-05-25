@@ -39,7 +39,7 @@ from app.agent.providers.codex_auth import (
 log = logging.getLogger(__name__)
 
 CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
-DEFAULT_CODEX_MODEL = "gpt-5.1-codex"
+DEFAULT_CODEX_MODEL = "gpt-5.5"
 
 # Codex rejects requests with no `instructions` field ({"detail": "Instructions
 # are required"}). pydantic-ai's @agent.system_prompt routes content into the
@@ -167,7 +167,7 @@ def build_codex_model(
 
     Args:
         auth_blob: Raw contents of ``~/.codex/auth.json``.
-        model_name: Codex model id (e.g. ``gpt-5.1-codex``).
+        model_name: Codex model id (e.g. ``gpt-5.5``).
         persist: Optional async callback that receives the updated
             auth.json string after a token refresh, so the caller can
             write it back to wherever it stored the original blob.

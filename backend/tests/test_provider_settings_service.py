@@ -75,7 +75,7 @@ def test_update_zai_round_trip_with_endpoint(db_session: Session, empty_settings
 
 def test_update_codex_round_trip(db_session: Session, empty_settings: None) -> None:
     blob = '{"auth_mode":"chatgpt","tokens":{"access_token":"x","refresh_token":"y"}}'
-    service.update_codex(db_session, auth_json=blob, chat_model="gpt-5-codex")
+    service.update_codex(db_session, auth_json=blob, chat_model="gpt-5.5")
     pick = service.pick_chat(db_session)
     assert pick.provider == "codex"
     assert pick.codex_auth_json == blob
@@ -105,6 +105,18 @@ def test_default_model_used_when_user_model_unset(
     service.update_openrouter(db_session, api_key="sk-or", chat_model=None)
     pick = service.pick_chat(db_session)
     assert pick.model_name == "openrouter/auto"
+
+
+def test_codex_default_model_matches_provider_constant(
+    db_session: Session, empty_settings: None
+) -> None:
+    from app.agent.providers.codex import DEFAULT_CODEX_MODEL
+
+    service.update_codex(db_session, auth_json="{}", chat_model=None)
+    pick = service.pick_chat(db_session)
+
+    assert pick.provider == "codex"
+    assert pick.model_name == DEFAULT_CODEX_MODEL
 
 
 def test_preferred_chat_honoured_when_configured(db_session: Session, empty_settings: None) -> None:

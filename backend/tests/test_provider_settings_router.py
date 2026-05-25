@@ -100,10 +100,10 @@ def test_put_codex_round_trip(client: TestClient, empty_settings: None) -> None:
     blob = '{"auth_mode":"chatgpt","tokens":{"access_token":"x","refresh_token":"y"}}'
     r = client.put(
         "/api/settings/providers/codex",
-        json={"auth_json": blob, "chat_model": "gpt-5-codex"},
+        json={"auth_json": blob, "chat_model": "gpt-5.5"},
     )
     assert r.status_code == 200
-    assert r.json()["codex"] == {"configured": True, "chat_model": "gpt-5-codex"}
+    assert r.json()["codex"] == {"configured": True, "chat_model": "gpt-5.5"}
 
 
 def test_put_omitted_api_key_preserves_existing(client: TestClient, empty_settings: None) -> None:
@@ -196,7 +196,7 @@ def test_put_codex_still_accepts_multiline_blob(client: TestClient, empty_settin
     )
     r = client.put(
         "/api/settings/providers/codex",
-        json={"auth_json": blob, "chat_model": "gpt-5-codex"},
+        json={"auth_json": blob, "chat_model": "gpt-5.5"},
     )
     assert r.status_code == 200
 

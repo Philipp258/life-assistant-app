@@ -57,8 +57,8 @@ Otherwise I suggest those measures:
 
 ## Setup
 
-Supported target: a fresh **Ubuntu 24.04 VPS** — root SSH access, public IP,
-ports 80 and 443 open.
+Supported target: a fresh **Ubuntu/Debian-style systemd VPS** with `apt`,
+root SSH access, public IP, and ports 80 and 443 open.
 
 1. SSH in as root.
 2. Run the installer. It clones the repo, installs dependencies, derives a
@@ -70,6 +70,9 @@ ports 80 and 443 open.
    curl -fsSL https://raw.githubusercontent.com/Philipp258/life-assistant/main/deploy/install.sh \
      | LIFE_ASSISTANT_REPO_URL=https://github.com/Philipp258/life-assistant.git bash
    ```
+
+   If sslip.io is temporarily rate-limited by Let's Encrypt, point your own DNS
+   name at the VPS and rerun with `LIFE_ASSISTANT_DOMAIN=your.name.example`.
 
 3. Open the URL printed at the end of the installer, sign in with the printed
    password, and finish provider setup in the UI.

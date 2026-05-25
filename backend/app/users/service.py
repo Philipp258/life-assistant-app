@@ -37,6 +37,11 @@ def _get_singleton(db: Session) -> User | None:
     return db.execute(select(User).order_by(User.id).limit(1)).scalar_one_or_none()
 
 
+def has_user(db: Session) -> bool:
+    """Whether the singleton user row already exists."""
+    return _get_singleton(db) is not None
+
+
 def is_onboarding() -> bool:
     """True while the singleton user has no onboarded_at timestamp.
 

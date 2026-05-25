@@ -203,6 +203,51 @@ describe("SettingsPanel — Brave API key", () => {
 });
 
 
+describe("SettingsPanel — provider save buttons", () => {
+  function providerForm(label: RegExp) {
+    const input = screen.getByLabelText(label);
+    const form = input.closest("form");
+    if (!form) throw new Error("Provider input is not inside a form");
+    return form;
+  }
+
+  it("PUTs Codex auth and model when the Codex Save button is clicked", async () => {
+    setupFetch({
+      provider: {
+        ...defaultProviderSettings,
+        codex: { configured: false, chat_model: null },
+      },
+    });
+    render(<SettingsPanel />);
+
+    const auth = await screen.findByLabelText(/auth\.json contents/i);
+    await userEvent.type(auth, "codex-auth-json");
+    await userEvent.type(
+      screen.getByLabelText(/chat model/i, { selector: "#codex-model" }),
+      "gpt-5.5",
+    );
+    await userEvent.click(
+      within(providerForm(/auth\.json contents/i)).getByRole("button", {
+        name: /save chatgpt subscription/i,
+      }),
+    );
+
+    await waitFor(() => {
+      const putCalls = fetchMock.mock.calls.filter(
+        ([url, init]) =>
+          url === "/api/settings/providers/codex" &&
+          (init as FetchInit | undefined)?.method === "PUT",
+      );
+      expect(putCalls).toHaveLength(1);
+      expect(JSON.parse(putCalls[0][1].body as string)).toEqual({
+        auth_json: "codex-auth-json",
+        chat_model: "gpt-5.5",
+      });
+    });
+  });
+});
+
+
 describe("SettingsPanel — OpenRouter TTS voice", () => {
   function openRouterForm() {
     const voiceSelect = screen.getByRole("combobox", { name: /tts voice/i });

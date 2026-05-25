@@ -60,7 +60,7 @@ const DEFAULT_MODELS: Record<ChatProvider, string> = {
   openai: "gpt-5.1",
   openrouter: "openrouter/auto",
   zai: "glm-5.1",
-  codex: "gpt-5-codex",
+  codex: "gpt-5.5",
 };
 
 const DEFAULT_OPENROUTER_TTS_MODEL = "canopylabs/orpheus-3b-0.1-ft";
@@ -297,6 +297,7 @@ function PreferredChatPicker({
         </Select>
         <Button
           type="button"
+          aria-label="Save preferred chat provider"
           disabled={!dirty || save.kind === "saving"}
           onClick={async () => {
             setSave({ kind: "saving" });
@@ -387,7 +388,11 @@ function ProviderCard({
       </header>
       {children}
       <div className="flex items-center gap-3">
-        <Button type="submit" disabled={save.kind === "saving" || saveDisabled}>
+        <Button
+          type="submit"
+          aria-label={`Save ${title}`}
+          disabled={save.kind === "saving" || saveDisabled}
+        >
           {save.kind === "saving" ? "Saving…" : "Save"}
         </Button>
         {configured && (
@@ -1012,7 +1017,11 @@ function RuntimeSettingsCard() {
         </p>
       </FieldRow>
       <div className="flex items-center gap-3">
-        <Button type="submit" disabled={save.kind === "saving" || load.kind === "loading"}>
+        <Button
+          type="submit"
+          aria-label="Save tools settings"
+          disabled={save.kind === "saving" || load.kind === "loading"}
+        >
           {save.kind === "saving" ? "Saving…" : "Save"}
         </Button>
         {save.kind === "saved" && (

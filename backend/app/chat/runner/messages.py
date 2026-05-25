@@ -11,12 +11,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-from pydantic_ai.messages import ModelRequest, SystemPromptPart
+from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.messages import ModelRequest, SystemPromptPart, UserPromptPart
 
 from app.datetime_utils import utc_now
 from app.tasks.models import Task
 from app.tasks.task_log import is_recurring_assistant_task
-from pydantic_ai.messages import UserPromptPart
 
 
 WakeOutcome = Literal[
@@ -110,16 +110,27 @@ TERMINAL_TASK_TOOL_NAMES = {
 }
 
 
-def _sanitize_error_text(exc: BaseException, *, max_len: int = 200) -> str:
+def _sanitize_error_text(exc: BaseException, *, max_len: int = 400) -> str:
     """Concise one-line representation of an exception for chat surfaces.
 
     Stack traces stay in the logger; users only see `Type: message` so
     the chat doesn't get clobbered with internals. Newlines are
     collapsed to keep the rendered card single-paragraph.
     """
-    msg = str(exc).strip().splitlines()
-    head = msg[0] if msg else ""
-    summary = f"{type(exc).__name__}: {head}" if head else type(exc).__name__
+    if isinstance(exc, ModelHTTPError):
+        detail = None
+        if isinstance(exc.body, dict):
+            raw_detail = exc.body.get("detail")
+            if isinstance(raw_detail, str):
+                detail = raw_detail
+        if detail:
+            summary = f"ModelHTTPError {exc.status_code} ({exc.model_name}): {detail}"
+        else:
+            summary = f"ModelHTTPError {exc.status_code} ({exc.model_name})"
+    else:
+        msg = str(exc).strip().splitlines()
+        head = msg[0] if msg else ""
+        summary = f"{type(exc).__name__}: {head}" if head else type(exc).__name__
     if len(summary) > max_len:
         summary = summary[: max_len - 1].rstrip() + "…"
     return summary

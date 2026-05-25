@@ -52,7 +52,7 @@ def test_garbled_codex_blob_rejected_and_state_unchanged(
 
     r = client.put(
         "/api/settings/providers/codex",
-        json={"auth_json": "this is not the auth.json blob", "chat_model": "gpt-5-codex"},
+        json={"auth_json": "this is not the auth.json blob", "chat_model": "gpt-5.5"},
     )
 
     assert r.status_code == 400, r.text
@@ -78,7 +78,7 @@ def test_model_only_patch_skips_verification(
         raise AssertionError("verification ran for a model-only patch")
 
     monkeypatch.setattr(credential_verify, "verify_codex", _boom)
-    r = client.put("/api/settings/providers/codex", json={"chat_model": "gpt-5-codex"})
+    r = client.put("/api/settings/providers/codex", json={"chat_model": "gpt-5.5"})
     assert r.status_code == 200, r.text
 
 

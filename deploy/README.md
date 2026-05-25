@@ -27,7 +27,7 @@ HTTPS endpoint at all, see [Tailnet-only deployment](#tailnet-only-deployment).
 
 ## Prerequisites
 
-- Ubuntu 24.04 VPS, root SSH access, public IPv4
+- Ubuntu/Debian-style systemd VPS with `apt`, root SSH access, public IPv4
 - Ports 80 (for ACME) and 443 (for the app) open
 - At least one supported chat provider credential for in-app setup
 
@@ -41,6 +41,14 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/deploy/install.
 
 The installer prints the HTTPS URL and the generated login password at the
 end. Save them.
+
+Optional install-time overrides:
+
+- `LIFE_ASSISTANT_DOMAIN=la.example.com` uses your own DNS name instead of the
+  derived sslip.io hostname. Point the `A` record at the VPS before running the
+  installer.
+- `LIFE_ASSISTANT_CERTBOT_STAGING=1` uses Let's Encrypt staging. Use this only
+  for release-test dry runs; browsers will not trust the certificate.
 
 Open the printed URL, sign in with the printed password, finish provider
 setup in the UI, then send a chat. Done.
@@ -111,11 +119,11 @@ sudo systemctl start life-assistant-backup.service
 
 # 2. Point the version marker at the baseline (--purge clears the stale row).
 sudo -u life-assistant bash -c \
-  'cd /opt/life-assistant/backend && /opt/life-assistant/.venv/bin/alembic stamp 0001_baseline --purge'
+  'cd /opt/life-assistant/backend && /opt/life-assistant/backend/.venv/bin/alembic stamp 0001_baseline --purge'
 
 # 3. Verify, then update normally.
 sudo -u life-assistant bash -c \
-  'cd /opt/life-assistant/backend && /opt/life-assistant/.venv/bin/alembic current'   # -> 0001_baseline
+  'cd /opt/life-assistant/backend && /opt/life-assistant/backend/.venv/bin/alembic current'   # -> 0001_baseline
 sudo -u life-assistant /opt/life-assistant/deploy/update.sh
 ```
 
@@ -177,7 +185,7 @@ sudo -u life-assistant bash -c '
   cd /opt/life-assistant
   git log --oneline -20
   git reset --hard <good-sha>
-  cd backend && /opt/life-assistant/.venv/bin/uv sync --frozen && /opt/life-assistant/.venv/bin/alembic upgrade head
+  cd backend && /home/life-assistant/.local/bin/uv python install 3.11 --managed-python && /home/life-assistant/.local/bin/uv sync --frozen --python 3.11 --managed-python && /opt/life-assistant/backend/.venv/bin/alembic upgrade head
   cd ../frontend && pnpm install --frozen-lockfile && pnpm build
 '
 sudo systemctl restart life-assistant
@@ -191,7 +199,8 @@ If a migration broke things, restore from the latest tarball (see
 | Path                              | Owner       | Purpose                              |
 |-----------------------------------|-------------|--------------------------------------|
 | `/opt/life-assistant`                       | life-assistant:life-assistant   | Repo checkout                        |
-| `/opt/life-assistant/.venv`                 | life-assistant:life-assistant   | Python venv                          |
+| `/home/life-assistant/.local/bin/uv`        | life-assistant:life-assistant   | Standalone uv binary                 |
+| `/opt/life-assistant/backend/.venv`         | life-assistant:life-assistant   | Backend Python venv                  |
 | `/opt/life-assistant/data` → `/var/lib/life-assistant/data` | symlink | Repo's `data/` points at persistent volume |
 | `/var/lib/life-assistant/data/life_assistant.db`      | life-assistant:life-assistant   | SQLite (+ WAL sidecars)              |
 | `/var/lib/life-assistant/backups/`          | life-assistant:life-assistant   | Daily snapshots, last 7              |

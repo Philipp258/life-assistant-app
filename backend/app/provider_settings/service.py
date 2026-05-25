@@ -14,6 +14,7 @@ from typing import Any, cast
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from app.agent.providers.codex import DEFAULT_CODEX_MODEL
 from app.db import SessionLocal
 from app.provider_settings.models import ProviderSettings
 from app.provider_settings.schema import ChatProvider
@@ -58,7 +59,7 @@ _DEFAULT_CHAT_MODELS: dict[ChatProvider, str] = {
     "openai": "gpt-5.1",
     "openrouter": "openrouter/auto",
     "zai": "glm-5.1",
-    "codex": "gpt-5-codex",
+    "codex": DEFAULT_CODEX_MODEL,
 }
 
 
