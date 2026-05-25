@@ -239,16 +239,17 @@ def session_to_json(session: CodexSession) -> str:
 async def refresh_session(
     session: CodexSession,
     *,
+    force: bool = False,
     persist: PersistCallback | None = None,
     http_client: httpx.AsyncClient | None = None,
 ) -> CodexSession:
-    """Refresh the access token if near expiry; otherwise return as-is.
+    """Refresh the access token if near expiry, or always when forced.
 
     If ``persist`` is supplied and a refresh occurred, it is awaited
     with the new auth.json blob so the caller can write it back to its
     store of choice (DB row, file, etc.).
     """
-    if not session.is_expired:
+    if not force and not session.is_expired:
         return session
 
     payload = {

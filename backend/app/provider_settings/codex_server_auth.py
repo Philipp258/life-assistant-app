@@ -84,7 +84,7 @@ async def _persist_to_auth_file(path: Path, session: CodexSession) -> None:
     path.chmod(0o600)
 
 
-async def load_server_session() -> CodexSession:
+async def load_server_session(*, force_refresh: bool = True) -> CodexSession:
     if not codex_cli_installed():
         raise ServerAuthError(
             "Codex CLI is not installed. Rerun the installer or install it with "
@@ -114,6 +114,7 @@ async def load_server_session() -> CodexSession:
     try:
         return await refresh_session(
             session,
+            force=force_refresh,
             persist=lambda refreshed: _persist_to_auth_file(path, refreshed),
         )
     except AuthExpiredError as exc:
@@ -132,7 +133,7 @@ async def server_auth_status(row: ProviderSettings) -> ServerAuthStatus:
 
     if installed and exists:
         try:
-            session = await load_server_session()
+            session = await load_server_session(force_refresh=False)
         except ServerAuthError as exc:
             error = str(exc)
     elif not installed:

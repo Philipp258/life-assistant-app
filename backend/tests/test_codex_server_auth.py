@@ -117,6 +117,7 @@ def test_server_auth_status_refreshes_expired_file(
     async def _refresh(
         session: CodexSession,
         *,
+        force: bool = False,
         persist=None,
         http_client=None,
     ) -> CodexSession:
@@ -136,6 +137,43 @@ def test_server_auth_status_refreshes_expired_file(
     status = asyncio.run(codex_server_auth.server_auth_status(_row(db_session)))
 
     assert status.importable is True
+    data = json.loads(server_auth_env.read_text(encoding="utf-8"))
+    assert data["tokens"]["access_token"] == fresh_access
+    assert data["tokens"]["refresh_token"] == "rotated-refresh"
+
+
+def test_load_server_session_force_refreshes_valid_file(
+    server_auth_env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    server_auth_env.write_text(_auth_blob(), encoding="utf-8")
+    fresh_access = _access_token()
+    seen_force: list[bool] = []
+
+    async def _refresh(
+        session: CodexSession,
+        *,
+        force: bool = False,
+        persist=None,
+        http_client=None,
+    ) -> CodexSession:
+        seen_force.append(force)
+        refreshed = replace(
+            session,
+            access_token=fresh_access,
+            refresh_token="rotated-refresh",
+            expires_at=datetime.now(UTC) + timedelta(hours=2),
+            last_refresh=datetime.now(UTC),
+        )
+        if persist is not None:
+            await persist(refreshed)
+        return refreshed
+
+    monkeypatch.setattr(codex_server_auth, "refresh_session", _refresh)
+
+    session = asyncio.run(codex_server_auth.load_server_session())
+
+    assert seen_force == [True]
+    assert session.access_token == fresh_access
     data = json.loads(server_auth_env.read_text(encoding="utf-8"))
     assert data["tokens"]["access_token"] == fresh_access
     assert data["tokens"]["refresh_token"] == "rotated-refresh"
