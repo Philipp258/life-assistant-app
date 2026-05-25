@@ -1,0 +1,12 @@
+{
+  // Cloudflare Workers Static Assets config for Storybook deployment.
+  // The CF project is a Worker, not a Pages project, so we use Workers
+  // Static Assets + `wrangler deploy`.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "assistant-app",
+  "compatibility_date": "2025-05-04",
+  "assets": {
+    "directory": "./storybook-static",
+    "not_found_handling": "single-page-application"
+  }
+}

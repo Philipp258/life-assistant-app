@@ -1,0 +1,28 @@
+/* Life Assistant palette — warm neutrals + an accent pair.
+   Sits on top of the shadcn vars in index.css so most shadcn components
+   still read sensible values. */
+
+:root {
+  --life-bg: #F2EEE8;
+  --life-card: #FBF9F5;
+  --life-ink: #1A1815;
+  --life-ink-2: #4A463F;
+  --life-ink-3: #8A857B;
+  --life-line: #E4DED3;
+
+  /* Default accent: sky (matches Assistant v3.html's TWEAKS). */
+  --life-accent: #6E92B8;
+  --life-accent-soft: #D8E4EF;
+
+  --life-done: #5F8568;
+  --life-done-soft: #E2EADD;
+  --life-scheduled: #6E92B8;
+  --life-scheduled-soft: #E4E9EE;
+  --life-recurring: #9A6EB3;
+  --life-recurring-soft: #EDE4EE;
+}
+
+@keyframes pulseRun {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}

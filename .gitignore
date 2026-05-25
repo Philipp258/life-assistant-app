@@ -1,0 +1,58 @@
+# User data (SQLite db, knowledge files, etc.)
+# data/ is a symlink to /var/lib/life-assistant/data in production.
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.python-version
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# uv
+.uv/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Node / pnpm
+node_modules/
+dist/
+build/
+.pnpm-store/
+*.tsbuildinfo
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Local agent/tool state
+.agents/
+.codex/
+.claude/settings*.json
+
+# Temporary implementation workspaces
+*-work/
+*-live-state/
+
+# Reference-only vendored repo (see roadmap.md "Relationship to openclaw/")
+openclaw/
+
+# Production credentials / runbook (never commit)
+PROD.md
+
+# wtree (scripts/wtree.py) per-worktree artifacts
+.wtree-status
+.wtree.json
+.wtree-bootstrap.sh
+WTREE_BOOTSTRAP.md
+
+*storybook.log
+storybook-static

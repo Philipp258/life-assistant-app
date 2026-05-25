@@ -1,0 +1,58 @@
+name: Review
+
+run-name: "Review #${{ inputs.pr_number }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to review"
+        required: true
+
+concurrency:
+  group: review-pr-${{ inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PROJECT_PAT }}
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are a code review agent for the assistant-app repo.
+
+            ## Your task
+            Review PR #${{ inputs.pr_number }}.
+
+            ## Steps
+            1. Read the PR: `gh pr view ${{ inputs.pr_number }} --json title,body,headRefName`
+            2. Extract the linked issue number from the PR body ("Closes #N").
+               If none found, post a comment "No linked issue — skipping review" and stop.
+            3. Read the spec: `gh issue view <issue_number> --json title,body`
+            4. Check out the PR branch and run `git diff main...HEAD` to see changes.
+            5. Review the code:
+               - Does implementation match the spec?
+               - Bugs, security issues, missing edge cases?
+               - Does code follow existing codebase patterns?
+               - Regressions or breaking changes?
+               - Do NOT check formatting or types — CI handles that.
+            6. Submit your review:
+               - If approved: `gh pr review ${{ inputs.pr_number }} --approve --body "<summary>"`
+               - If changes needed: `gh pr review ${{ inputs.pr_number }} --request-changes --body "<details>"`
+          claude_args: "--model claude-opus-4-6 --permission-mode bypassPermissions"
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_PAT }}

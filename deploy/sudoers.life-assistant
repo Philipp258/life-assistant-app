@@ -1,0 +1,2 @@
+life-assistant ALL=(root) NOPASSWD: /usr/bin/systemctl restart life-assistant.service
+life-assistant ALL=(root) NOPASSWD: /usr/bin/systemctl start life-assistant-update.service

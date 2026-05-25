@@ -1,0 +1,9 @@
+[Unit]
+Description=Life Assistant SQLite backup
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=life-assistant
+Group=life-assistant
+ExecStart=/opt/life-assistant/deploy/backup.sh
