@@ -77,6 +77,15 @@ root SSH access, public IP, and ports 80 and 443 open.
 3. Open the URL printed at the end of the installer, sign in with the printed
    password, and finish provider setup in the UI.
 
+   For ChatGPT subscription auth, the UI shows the server command to run:
+
+   ```bash
+   sudo -u life-assistant -H env HOME=/home/life-assistant codex login --device-auth
+   ```
+
+   After that command succeeds on the VPS, return to the UI and import the
+   server Codex login.
+
 Supported chat providers:
 
 - z.ai

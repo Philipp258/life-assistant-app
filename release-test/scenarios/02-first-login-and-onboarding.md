@@ -4,8 +4,9 @@
 gets to a state where they can have a normal conversation with the
 assistant — chat provider configured, any required onboarding done.
 
-**Persona.** Someone who has never seen this app before, has an
-OpenRouter API key handy, and just wants to start using it.
+**Persona.** Someone who has never seen this app before, has a
+supported chat-provider credential ready, and just wants to start
+using it.
 
 **Done when.** You can send a message in the main chat and get a real
 reply back from the configured provider, not a placeholder or error.
