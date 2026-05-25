@@ -42,6 +42,7 @@ from app.chat.service import (
 )
 from app.chat.session_policy import resolve_kind
 from app.db import SessionLocal
+from app.provider_settings import service as provider_service
 from app.tasks.models import Task
 from app.tasks.service import previous_completed_sibling
 
@@ -173,6 +174,12 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
 
     agent = get_agent()
     voice = _pending_voice.pop(session_id, False)
+    with SessionLocal() as db:
+        # Codex's Responses endpoint supports streaming at the transport
+        # level, but pydantic-ai's per-node stream can stall on tool-heavy
+        # runs while the regular node execution path completes. Keep Codex
+        # turns non-streamed until that provider path is reliable.
+        stream_model_requests = provider_service.pick_chat(db).provider != "codex"
 
     # pydantic-ai only auto-adds `@agent.system_prompt` for the very
     # first request of a fresh run; with `message_history` set (always,
@@ -351,7 +358,7 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
                 ):
                     _flush_pending_tool_return_request(node, messages)
                     break
-                if Agent.is_model_request_node(node):
+                if stream_model_requests and Agent.is_model_request_node(node):
                     await _stream_text(node)
                 messages = list(agent_run.new_messages())
                 _flush(messages)
