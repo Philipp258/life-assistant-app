@@ -116,9 +116,10 @@ echo "==> uv + Python 3.11"
 install -d -o life-assistant -g life-assistant -m 755 /home/life-assistant/.local /home/life-assistant/.local/bin
 if [ ! -x "$UV_BIN" ]; then
   sudo -u life-assistant env HOME=/home/life-assistant UV_NO_MODIFY_PATH=1 \
-    sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
+    sh -c 'cd /home/life-assistant && curl -LsSf https://astral.sh/uv/install.sh | sh'
 fi
-sudo -u life-assistant env HOME=/home/life-assistant "$UV_BIN" python install 3.11 --managed-python
+sudo -u life-assistant env HOME=/home/life-assistant \
+  sh -c "cd /home/life-assistant && '$UV_BIN' python install 3.11 --managed-python"
 
 echo "==> env file"
 SEED_LOGIN_PASS=""
