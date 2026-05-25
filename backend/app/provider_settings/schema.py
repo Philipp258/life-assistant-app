@@ -8,9 +8,10 @@ PATCH endpoints accept partial updates per provider.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 ChatProvider = Literal["openai", "openrouter", "zai", "codex"]
 
@@ -80,13 +81,28 @@ class ZAIOut(BaseModel):
 
 
 class CodexIn(BaseModel):
-    auth_json: str | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    clear_auth: bool = False
     chat_model: str | None = Field(default=None, max_length=128)
 
 
 class CodexOut(BaseModel):
     configured: bool
     chat_model: str | None
+
+
+class CodexServerAuthOut(BaseModel):
+    codex_cli_installed: bool
+    auth_file: str
+    auth_file_exists: bool
+    importable: bool
+    configured: bool
+    expires_at: datetime | None
+    plan_type: str | None
+    error: str | None
+    login_command: str
+    status_command: str
 
 
 class PreferredChatIn(BaseModel):

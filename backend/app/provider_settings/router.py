@@ -14,6 +14,7 @@ from typing import Callable, cast
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.provider_settings import codex_server_auth
 from app.db import get_session
 from app.provider_settings import service
 from app.provider_settings import verify as credential_verify
@@ -22,6 +23,7 @@ from app.provider_settings.schema import (
     ChatProvider,
     CodexIn,
     CodexOut,
+    CodexServerAuthOut,
     OpenAIIn,
     OpenAIOut,
     OpenRouterIn,
@@ -66,7 +68,7 @@ def _serialize(row: ProviderSettings) -> ProviderSettingsOut:
             chat_model=row.zai_chat_model,
         ),
         codex=CodexOut(
-            configured=bool(row.codex_auth_json),
+            configured=bool(row.codex_access_token and row.codex_refresh_token),
             chat_model=row.codex_chat_model,
         ),
     )
@@ -132,9 +134,31 @@ def put_zai(payload: ZAIIn, db: Session = Depends(get_session)) -> ProviderSetti
 
 @router.put("/codex")
 def put_codex(payload: CodexIn, db: Session = Depends(get_session)) -> ProviderSettingsOut:
-    if payload.auth_json:
-        _verify(lambda: credential_verify.verify_codex(payload.auth_json))
-    row = service.update_codex(db, auth_json=payload.auth_json, chat_model=payload.chat_model)
+    row = service.update_codex(
+        db,
+        chat_model=payload.chat_model,
+        clear_auth=payload.clear_auth,
+    )
+    return _serialize(row)
+
+
+@router.get("/codex/server-auth")
+async def get_codex_server_auth(
+    db: Session = Depends(get_session),
+) -> CodexServerAuthOut:
+    status = await codex_server_auth.server_auth_status(service.get_settings(db))
+    return CodexServerAuthOut(**status.__dict__)
+
+
+@router.post("/codex/import-server-auth")
+async def import_codex_server_auth(
+    db: Session = Depends(get_session),
+) -> ProviderSettingsOut:
+    try:
+        session = await codex_server_auth.load_server_session()
+    except codex_server_auth.ServerAuthError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    row = service.import_codex_session(db, session=session)
     return _serialize(row)
 
 
@@ -149,7 +173,7 @@ def put_preferred_chat(
             "openai": bool(row.openai_api_key),
             "openrouter": bool(row.openrouter_api_key),
             "zai": bool(row.zai_api_key),
-            "codex": bool(row.codex_auth_json),
+            "codex": bool(row.codex_access_token and row.codex_refresh_token),
         }
         if not configured.get(payload.preferred_chat_provider):
             raise HTTPException(

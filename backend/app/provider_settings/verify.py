@@ -9,27 +9,21 @@ ever flipping that state. The onboarding escape hatch is the backstop
 for everything verification can't catch (a key revoked *after* setup,
 quota exhaustion, a provider outage).
 
-Two strategies, by credential shape:
+Strategy:
 
-* OpenAI-compatible API keys (openai, openrouter, zai) are opaque
-  bearer tokens — the only way to know one works is to ask the
-  provider. We hit a cheap auth-required endpoint and reject *solely*
-  on an explicit auth failure (401/403). Anything else — 2xx, 5xx, an
-  unexpected 404, a network error — is treated as "could not disprove"
-  and allowed through: we must not block a valid key because the
-  provider or the network hiccuped, and the escape hatch covers a
-  genuine failure.
-* Codex subscription blobs are structured JSON. The provider loader
-  already raises ``AuthInvalidError`` on a malformed/garbled paste,
-  which is exactly the common "wrong creds" mistake. Reuse it — no
-  network needed.
+OpenAI-compatible API keys (openai, openrouter, zai) are opaque bearer
+tokens — the only way to know one works is to ask the provider. We hit
+a cheap auth-required endpoint and reject *solely* on an explicit auth
+failure (401/403). Anything else — 2xx, 5xx, an unexpected 404, a
+network error — is treated as "could not disprove" and allowed through:
+we must not block a valid key because the provider or the network
+hiccuped, and the escape hatch covers a genuine failure.
 """
 
 from __future__ import annotations
 
 import httpx
 
-from app.agent.providers.codex_auth import AuthInvalidError, load_session_from_json
 from app.agent.providers.openrouter import OPENROUTER_BASE_URL
 from app.agent.providers.zai import DEFAULT_ZAI_ENDPOINT, ZAI_ENDPOINT_BASE_URLS
 
@@ -81,10 +75,3 @@ def verify_zai(api_key: str, endpoint: str | None) -> None:
         else:
             return
     _probe_openai_compatible(api_key=api_key, base_url=base_url, path="/models")
-
-
-def verify_codex(auth_json: str) -> None:
-    try:
-        load_session_from_json(auth_json)
-    except AuthInvalidError as exc:
-        raise CredentialError(f"That doesn't look like a valid Codex auth.json: {exc}") from exc

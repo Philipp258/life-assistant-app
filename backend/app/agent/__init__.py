@@ -289,9 +289,9 @@ def build_chat_model() -> Model:
             api_key=pick.zai_api_key, model_name=pick.model_name, endpoint=endpoint
         )
     if pick.provider == "codex":
-        assert pick.codex_auth_json is not None
+        assert pick.codex_session is not None
         return build_codex_model(
-            auth_blob=pick.codex_auth_json,
+            session=pick.codex_session,
             model_name=pick.model_name,
             persist=provider_service.persist_codex_auth,
         )

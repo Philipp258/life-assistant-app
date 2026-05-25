@@ -10,17 +10,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { useIdentity } from "@/shell/identity";
 
 import {
+  getCodexServerAuth,
   getProviderSettings,
+  importCodexServerAuth,
   putCodex,
   putOpenAI,
   putOpenRouter,
   putPreferredChat,
   putZAI,
   type ChatProvider,
+  type CodexServerAuthStatus,
   type ProviderSettings,
 } from "./providerApi";
 import {
@@ -782,51 +784,173 @@ function CodexCard({
   settings: ProviderSettings;
   onSaved: () => Promise<void>;
 }) {
-  const [authJson, setAuthJson] = useState("");
   const [model, setModel] = useState(settings.codex.chat_model ?? "");
+  const [status, setStatus] = useState<
+    | { kind: "loading" }
+    | { kind: "ready"; value: CodexServerAuthStatus }
+    | { kind: "error"; message: string }
+  >({ kind: "loading" });
+  const [save, setSave] = useState<SaveStatus>({ kind: "idle" });
+  const [serverAction, setServerAction] = useState<SaveStatus>({ kind: "idle" });
+
+  const loadStatus = async () => {
+    setStatus({ kind: "loading" });
+    try {
+      setStatus({ kind: "ready", value: await getCodexServerAuth() });
+    } catch (e) {
+      setStatus({ kind: "error", message: e instanceof Error ? e.message : String(e) });
+    }
+  };
+
+  useEffect(() => {
+    setModel(settings.codex.chat_model ?? "");
+  }, [settings.codex.chat_model]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCodexServerAuth()
+      .then((value) => {
+        if (!cancelled) setStatus({ kind: "ready", value });
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setStatus({
+            kind: "error",
+            message: e instanceof Error ? e.message : String(e),
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const readyStatus = status.kind === "ready" ? status.value : null;
+
+  const saveModel = async (e: FormEvent) => {
+    e.preventDefault();
+    setSave({ kind: "saving" });
+    try {
+      await putCodex({ chat_model: model || null });
+      await onSaved();
+      setSave({ kind: "saved" });
+    } catch (err) {
+      setSave({
+        kind: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  const clear = async () => {
+    setSave({ kind: "saving" });
+    try {
+      await putCodex({ clear_auth: true });
+      setModel("");
+      await onSaved();
+      await loadStatus();
+      setSave({ kind: "saved" });
+    } catch (err) {
+      setSave({
+        kind: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  const importServerAuth = async () => {
+    setServerAction({ kind: "saving" });
+    try {
+      await importCodexServerAuth();
+      await onSaved();
+      await loadStatus();
+      setServerAction({ kind: "saved" });
+    } catch (err) {
+      setServerAction({
+        kind: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
 
   return (
-    <ProviderCard
-      title={PROVIDER_LABELS.codex}
-      configured={settings.codex.configured}
-      saveDisabled={!settings.codex.configured && !authJson}
-      onClear={async () => {
-        await putCodex({ auth_json: "" });
-        setAuthJson("");
-        setModel("");
-        await onSaved();
-      }}
-      onSave={async () => {
-        await putCodex({
-          auth_json: authJson || null,
-          chat_model: model || null,
-        });
-        setAuthJson("");
-        await onSaved();
-      }}
-    >
+    <section className="flex flex-col gap-3 rounded-md border border-life-line p-4">
+      <header className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">{PROVIDER_LABELS.codex}</h3>
+        <span
+          className={`text-[11px] ${
+            settings.codex.configured ? "text-green-600" : "text-life-ink-3"
+          }`}
+        >
+          {settings.codex.configured ? "Configured" : "Not configured"}
+        </span>
+      </header>
       <p className="text-[11px] text-life-ink-3">
-        Run <code className="font-mono">codex</code> locally, sign in with your
-        ChatGPT account, then paste the contents of{" "}
-        <code className="font-mono">~/.codex/auth.json</code> below. The refresh
-        token rotates automatically.
+        Sign in to Codex on this server as the app user, then import that server
+        login here.
       </p>
-      <FieldRow>
-        <Label htmlFor="codex-auth">auth.json contents</Label>
-        <Textarea
-          id="codex-auth"
-          value={authJson}
-          onChange={(e) => setAuthJson(e.target.value)}
-          placeholder={
-            settings.codex.configured
-              ? "•••••• (leave blank to keep current)"
-              : '{"auth_mode":"chatgpt","tokens":{"access_token":"...","refresh_token":"..."}}'
-          }
-          rows={6}
-          className="font-mono text-xs"
-          autoComplete="off"
-        />
-      </FieldRow>
+      {status.kind === "ready" ? (
+        <div className="flex flex-col gap-1 rounded-md bg-life-surface-2 p-3 text-[11px] text-life-ink-3">
+          <StatusLine
+            label="Codex CLI"
+            value={status.value.codex_cli_installed ? "Installed" : "Missing"}
+          />
+          <StatusLine
+            label="Auth file"
+            value={status.value.auth_file_exists ? status.value.auth_file : "Not found"}
+          />
+          <StatusLine
+            label="Server login"
+            value={status.value.importable ? "Ready to import" : "Not ready"}
+          />
+          {status.value.plan_type ? (
+            <StatusLine label="Plan" value={status.value.plan_type} />
+          ) : null}
+          {status.value.expires_at ? (
+            <StatusLine
+              label="Token expiry"
+              value={new Date(status.value.expires_at).toLocaleString()}
+            />
+          ) : null}
+          {status.value.error ? (
+            <p className="text-red-500">{status.value.error}</p>
+          ) : null}
+        </div>
+      ) : status.kind === "loading" ? (
+        <p className="text-[11px] text-life-ink-3">Checking server Codex login…</p>
+      ) : (
+        <p className="text-[11px] text-red-500">{status.message}</p>
+      )}
+      {readyStatus ? (
+        <div className="flex flex-col gap-2">
+          <CommandBlock label="Login command" command={readyStatus.login_command} />
+          <CommandBlock label="Status command" command={readyStatus.status_command} />
+        </div>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={loadStatus}
+          disabled={status.kind === "loading" || serverAction.kind === "saving"}
+        >
+          Check server login
+        </Button>
+        <Button
+          type="button"
+          onClick={importServerAuth}
+          disabled={!readyStatus?.importable || serverAction.kind === "saving"}
+        >
+          {serverAction.kind === "saving" ? "Importing…" : "Use server login"}
+        </Button>
+        {serverAction.kind === "saved" && (
+          <span className="text-xs text-green-600">Imported.</span>
+        )}
+        {serverAction.kind === "error" && (
+          <span className="text-xs text-red-500">{serverAction.message}</span>
+        )}
+      </div>
+      <form onSubmit={saveModel} className="flex flex-col gap-3">
       <FieldRow>
         <Label htmlFor="codex-model">Chat model</Label>
         <Input
@@ -836,7 +960,49 @@ function CodexCard({
           placeholder={DEFAULT_MODELS.codex}
         />
       </FieldRow>
-    </ProviderCard>
+        <div className="flex items-center gap-3">
+          <Button type="submit" disabled={save.kind === "saving"}>
+            {save.kind === "saving" ? "Saving…" : "Save"}
+          </Button>
+          {settings.codex.configured && (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={clear}
+              disabled={save.kind === "saving"}
+            >
+              Clear
+            </Button>
+          )}
+          {save.kind === "saved" && (
+            <span className="text-xs text-green-600">Saved.</span>
+          )}
+          {save.kind === "error" && (
+            <span className="text-xs text-red-500">{save.message}</span>
+          )}
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function StatusLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-2">
+      <span className="text-life-ink-3">{label}</span>
+      <span className="break-words text-life-ink-1">{value}</span>
+    </div>
+  );
+}
+
+function CommandBlock({ label, command }: { label: string; command: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <Label>{label}</Label>
+      <code className="block rounded-md bg-life-surface-2 p-2 font-mono text-[11px] leading-relaxed text-life-ink-1 break-words">
+        {command}
+      </code>
+    </div>
   );
 }
 

@@ -1,11 +1,11 @@
 """Codex (ChatGPT subscription) provider — Responses API via Codex CLI OAuth.
 
-The user authenticates locally with the OpenAI ``codex`` CLI, then pastes
-the resulting ``~/.codex/auth.json`` blob into the provider settings. We
-talk to ``https://chatgpt.com/backend-api/codex/responses`` with the
-``access_token`` as a bearer, and refresh through the OAuth refresh
-endpoint when the JWT is near expiry. Refreshed tokens are written back
-via a caller-supplied async callback (the DB-write path).
+The user authenticates on the VPS with the OpenAI ``codex`` CLI as the
+service user, then Life Assistant imports that session into typed provider
+settings. We talk to ``https://chatgpt.com/backend-api/codex/responses`` with
+the ``access_token`` as a bearer, and refresh through the OAuth refresh
+endpoint when the JWT is near expiry. Refreshed tokens are written back via
+a caller-supplied async callback (the DB-write path).
 
 Why OpenAIResponsesModel: the Codex endpoint speaks the OpenAI Responses
 API event grammar. Using pydantic-ai's built-in model means we get
@@ -32,7 +32,6 @@ from typing_extensions import override
 from app.agent.providers.codex_auth import (
     CodexSession,
     PersistCallback,
-    load_session_from_json,
     refresh_session,
 )
 
@@ -71,11 +70,11 @@ class _CodexAuth(httpx.Auth):
                 self._session = await refresh_session(self._session, persist=self._safe_persist)
             return self._session
 
-    async def _safe_persist(self, blob: str) -> None:
+    async def _safe_persist(self, session: CodexSession) -> None:
         if self._persist is None:
             return
         try:
-            await self._persist(blob)
+            await self._persist(session)
         except Exception:  # pragma: no cover — persist failure is non-fatal
             log.exception("Codex token persist callback failed; refresh will retry next cycle.")
 
@@ -159,23 +158,19 @@ class _CodexResponsesModel(OpenAIResponsesModel):
 
 def build_codex_model(
     *,
-    auth_blob: str,
+    session: CodexSession,
     model_name: str = DEFAULT_CODEX_MODEL,
     persist: PersistCallback | None = None,
 ) -> OpenAIResponsesModel:
     """Build a pydantic-ai model wired to the Codex Responses endpoint.
 
     Args:
-        auth_blob: Raw contents of ``~/.codex/auth.json``.
+        session: Stored Codex CLI session credentials.
         model_name: Codex model id (e.g. ``gpt-5.5``).
         persist: Optional async callback that receives the updated
-            auth.json string after a token refresh, so the caller can
-            write it back to wherever it stored the original blob.
-
-    Raises:
-        AuthInvalidError: ``auth_blob`` is missing required fields.
+            session after a token refresh, so the caller can write it
+            back to typed provider settings.
     """
-    session = load_session_from_json(auth_blob)
     auth = _CodexAuth(session, persist)
     http_client = httpx.AsyncClient(auth=auth, timeout=httpx.Timeout(300, connect=15))
     # The api_key is required by the openai SDK but the httpx Auth

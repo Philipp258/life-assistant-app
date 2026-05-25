@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SettingsPanel } from "./SettingsPanel";
-import type { OpenRouterBlock } from "./providerApi";
+import type { CodexServerAuthStatus, OpenRouterBlock } from "./providerApi";
 import type { RuntimeSettings } from "./runtimeSettingsApi";
 
 const fetchMock = vi.fn();
@@ -29,13 +29,35 @@ const defaultProviderSettings = {
   codex: { configured: false, chat_model: null },
 };
 
+const defaultCodexServerAuth: CodexServerAuthStatus = {
+  codex_cli_installed: true,
+  auth_file: "/home/life-assistant/.codex/auth.json",
+  auth_file_exists: true,
+  importable: true,
+  configured: false,
+  expires_at: "2026-05-25T12:00:00Z",
+  plan_type: "plus",
+  error: null,
+  login_command:
+    "sudo -u life-assistant -H env HOME=/home/life-assistant codex login --device-auth",
+  status_command:
+    "sudo -u life-assistant -H env HOME=/home/life-assistant codex login status",
+};
+
 function setupFetch(
   options: {
     runtime?: Partial<RuntimeSettings>;
     provider?: Record<string, unknown>;
+    codexServerAuth?: CodexServerAuthStatus;
+    importProvider?: Record<string, unknown>;
   } = {},
 ) {
   const provider = options.provider ?? defaultProviderSettings;
+  const importProvider = options.importProvider ?? {
+    ...defaultProviderSettings,
+    codex: { configured: true, chat_model: null },
+  };
+  const codexServerAuth = options.codexServerAuth ?? defaultCodexServerAuth;
   const runtime = {
     brave_api_key: "",
     vad_timeout_ms: "",
@@ -47,6 +69,18 @@ function setupFetch(
     const method = init?.method ?? "GET";
     if (input === "/api/settings/providers" && method === "GET") {
       return Promise.resolve(jsonResponse(provider));
+    }
+    if (
+      input === "/api/settings/providers/codex/server-auth" &&
+      method === "GET"
+    ) {
+      return Promise.resolve(jsonResponse(codexServerAuth));
+    }
+    if (
+      input === "/api/settings/providers/codex/import-server-auth" &&
+      method === "POST"
+    ) {
+      return Promise.resolve(jsonResponse(importProvider));
     }
     if (input.startsWith("/api/settings/providers/") && method === "PUT") {
       return Promise.resolve(jsonResponse(provider));
@@ -204,14 +238,16 @@ describe("SettingsPanel — Brave API key", () => {
 
 
 describe("SettingsPanel — provider save buttons", () => {
-  function providerForm(label: RegExp) {
-    const input = screen.getByLabelText(label);
+  function codexForm() {
+    const input = screen.getByLabelText(/chat model/i, {
+      selector: "#codex-model",
+    });
     const form = input.closest("form");
     if (!form) throw new Error("Provider input is not inside a form");
     return form;
   }
 
-  it("PUTs Codex auth and model when the Codex Save button is clicked", async () => {
+  it("shows Codex server login status and imports it", async () => {
     setupFetch({
       provider: {
         ...defaultProviderSettings,
@@ -220,15 +256,38 @@ describe("SettingsPanel — provider save buttons", () => {
     });
     render(<SettingsPanel />);
 
-    const auth = await screen.findByLabelText(/auth\.json contents/i);
-    await userEvent.type(auth, "codex-auth-json");
+    expect(await screen.findByText(/codex login --device-auth/i)).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: /use server login/i }),
+    );
+
+    await waitFor(() => {
+      const importCalls = fetchMock.mock.calls.filter(
+        ([url, init]) =>
+          url === "/api/settings/providers/codex/import-server-auth" &&
+          (init as FetchInit | undefined)?.method === "POST",
+      );
+      expect(importCalls).toHaveLength(1);
+    });
+  });
+
+  it("PUTs Codex model when the Codex Save button is clicked", async () => {
+    setupFetch({
+      provider: {
+        ...defaultProviderSettings,
+        codex: { configured: false, chat_model: null },
+      },
+    });
+    render(<SettingsPanel />);
+
+    await screen.findByLabelText(/chat model/i, { selector: "#codex-model" });
     await userEvent.type(
       screen.getByLabelText(/chat model/i, { selector: "#codex-model" }),
       "gpt-5.5",
     );
     await userEvent.click(
-      within(providerForm(/auth\.json contents/i)).getByRole("button", {
-        name: /save chatgpt subscription/i,
+      within(codexForm()).getByRole("button", {
+        name: /save/i,
       }),
     );
 
@@ -240,8 +299,36 @@ describe("SettingsPanel — provider save buttons", () => {
       );
       expect(putCalls).toHaveLength(1);
       expect(JSON.parse(putCalls[0][1].body as string)).toEqual({
-        auth_json: "codex-auth-json",
         chat_model: "gpt-5.5",
+      });
+    });
+  });
+
+  it("clears Codex auth explicitly", async () => {
+    setupFetch({
+      provider: {
+        ...defaultProviderSettings,
+        codex: { configured: true, chat_model: "gpt-5.5" },
+      },
+    });
+    render(<SettingsPanel />);
+
+    await screen.findByLabelText(/chat model/i, { selector: "#codex-model" });
+    await userEvent.click(
+      within(codexForm()).getByRole("button", {
+        name: /clear/i,
+      }),
+    );
+
+    await waitFor(() => {
+      const putCalls = fetchMock.mock.calls.filter(
+        ([url, init]) =>
+          url === "/api/settings/providers/codex" &&
+          (init as FetchInit | undefined)?.method === "PUT",
+      );
+      expect(putCalls).toHaveLength(1);
+      expect(JSON.parse(putCalls[0][1].body as string)).toEqual({
+        clear_auth: true,
       });
     });
   });

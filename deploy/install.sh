@@ -78,6 +78,9 @@ fi
 corepack enable
 corepack prepare pnpm@10.33.2 --activate
 
+echo "==> Codex CLI"
+npm install -g @openai/codex >/dev/null
+
 echo "==> legacy service user"
 if ! id life-assistant >/dev/null 2>&1; then
   useradd --system --create-home --home-dir /home/life-assistant --shell /usr/sbin/nologin life-assistant
@@ -256,6 +259,8 @@ if [ -n "$SEED_LOGIN_PASS" ]; then
   echo "  (rotate later with:  make set-password PASSWORD=<new>)"
   rm -f "$PENDING_PASSWORD_FILE"
 fi
+echo "  Finish provider setup in the UI. For Codex, Settings will show"
+echo "  the server login command and import the server Codex session."
 echo "==============================================================="
 echo
 echo "Privacy notes:"

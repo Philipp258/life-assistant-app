@@ -14,6 +14,7 @@ from typing import Literal
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelRequest, SystemPromptPart, UserPromptPart
 
+from app.agent.providers.codex_auth import AuthExpiredError, AuthInvalidError
 from app.datetime_utils import utc_now
 from app.tasks.models import Task
 from app.tasks.task_log import is_recurring_assistant_task
@@ -110,6 +111,29 @@ TERMINAL_TASK_TOOL_NAMES = {
 }
 
 
+def _exception_chain(exc: BaseException, *, max_depth: int = 6) -> list[BaseException]:
+    out: list[BaseException] = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and len(out) < max_depth and id(current) not in seen:
+        out.append(current)
+        seen.add(id(current))
+        if current.__cause__ is not None:
+            current = current.__cause__
+        elif not current.__suppress_context__:
+            current = current.__context__
+        else:
+            current = None
+    return out
+
+
+def _best_user_error(exc: BaseException) -> BaseException:
+    for candidate in _exception_chain(exc):
+        if isinstance(candidate, (AuthExpiredError, AuthInvalidError)):
+            return candidate
+    return exc
+
+
 def _sanitize_error_text(exc: BaseException, *, max_len: int = 400) -> str:
     """Concise one-line representation of an exception for chat surfaces.
 
@@ -117,6 +141,7 @@ def _sanitize_error_text(exc: BaseException, *, max_len: int = 400) -> str:
     the chat doesn't get clobbered with internals. Newlines are
     collapsed to keep the rendered card single-paragraph.
     """
+    exc = _best_user_error(exc)
     if isinstance(exc, ModelHTTPError):
         detail = None
         if isinstance(exc.body, dict):

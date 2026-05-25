@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import base64
+import time
 from pathlib import Path
 
 import pytest
@@ -174,5 +176,88 @@ def test_task_log_line_backfill_for_existing_recurring_routines(alembic_cfg: Con
         assert rows[5] == "quick-check"
         assert rows[6] == "quick-check-2"
         assert rows[7] == "quick-check-3"
+    finally:
+        con.close()
+
+
+def _jwt(payload: dict) -> str:
+    header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256"}).encode()).rstrip(b"=")
+    body = base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=")
+    sig = base64.urlsafe_b64encode(b"sig").rstrip(b"=")
+    return b".".join([header, body, sig]).decode()
+
+
+def test_codex_typed_credentials_migration_imports_valid_blob(
+    alembic_cfg: Config,
+) -> None:
+    command.upgrade(alembic_cfg, "9c1de4f7b201")
+    access = _jwt({"exp": int(time.time()) + 3600})
+    id_token = _jwt(
+        {
+            "https://api.openai.com/auth": {
+                "chatgpt_account_id": "acct-migrated",
+                "chatgpt_plan_type": "pro",
+            }
+        }
+    )
+    blob = json.dumps(
+        {
+            "auth_mode": "chatgpt",
+            "tokens": {
+                "access_token": access,
+                "refresh_token": "refresh-migrated",
+                "id_token": id_token,
+            },
+            "last_refresh": "2026-05-25T10:00:00Z",
+        }
+    )
+
+    con = sqlite3.connect(alembic_cfg.attributes["db_path"])
+    try:
+        con.execute(
+            "INSERT INTO provider_settings (id, codex_auth_json) VALUES (1, ?)",
+            (blob,),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    command.upgrade(alembic_cfg, "head")
+
+    con = sqlite3.connect(alembic_cfg.attributes["db_path"])
+    try:
+        columns = {row[1] for row in con.execute("PRAGMA table_info(provider_settings)")}
+        assert "codex_auth_json" not in columns
+        row = con.execute(
+            """
+            SELECT codex_auth_mode, codex_access_token, codex_refresh_token,
+                   codex_account_id, codex_plan_type
+            FROM provider_settings WHERE id = 1
+            """
+        ).fetchone()
+        assert row == ("chatgpt", access, "refresh-migrated", "acct-migrated", "pro")
+    finally:
+        con.close()
+
+
+def test_codex_typed_credentials_migration_discards_invalid_blob(
+    alembic_cfg: Config,
+) -> None:
+    command.upgrade(alembic_cfg, "9c1de4f7b201")
+    con = sqlite3.connect(alembic_cfg.attributes["db_path"])
+    try:
+        con.execute("INSERT INTO provider_settings (id, codex_auth_json) VALUES (1, 'not json')")
+        con.commit()
+    finally:
+        con.close()
+
+    command.upgrade(alembic_cfg, "head")
+
+    con = sqlite3.connect(alembic_cfg.attributes["db_path"])
+    try:
+        row = con.execute(
+            "SELECT codex_access_token, codex_refresh_token FROM provider_settings WHERE id = 1"
+        ).fetchone()
+        assert row == (None, None)
     finally:
         con.close()
