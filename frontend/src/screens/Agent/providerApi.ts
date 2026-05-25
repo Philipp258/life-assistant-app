@@ -19,6 +19,18 @@ export type ZAIBlock = {
   chat_model: string | null;
 };
 export type CodexBlock = { configured: boolean; chat_model: string | null };
+export type CodexServerAuthStatus = {
+  codex_cli_installed: boolean;
+  auth_file: string;
+  auth_file_exists: boolean;
+  importable: boolean;
+  configured: boolean;
+  expires_at: string | null;
+  plan_type: string | null;
+  error: string | null;
+  login_command: string;
+  status_command: string;
+};
 
 export type ProviderSettings = {
   preferred_chat_provider: ChatProvider | null;
@@ -40,16 +52,20 @@ export type ZAIPatch = {
   endpoint?: string | null;
   chat_model?: string | null;
 };
-export type CodexPatch = { auth_json?: string | null; chat_model?: string | null };
+export type CodexPatch = { clear_auth?: boolean; chat_model?: string | null };
 
 export async function getProviderSettings(): Promise<ProviderSettings> {
   const r = await apiFetch("/api/settings/providers");
   return jsonOrThrow<ProviderSettings>(r);
 }
 
-async function putOrThrow<T>(path: string, body: unknown): Promise<T> {
+async function requestJsonOrThrow<T>(
+  method: "PUT" | "POST",
+  path: string,
+  body: unknown,
+): Promise<T> {
   const r = await apiFetch(path, {
-    method: "PUT",
+    method,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -64,23 +80,36 @@ async function putOrThrow<T>(path: string, body: unknown): Promise<T> {
 }
 
 export function putOpenAI(patch: OpenAIPatch) {
-  return putOrThrow<ProviderSettings>("/api/settings/providers/openai", patch);
+  return requestJsonOrThrow<ProviderSettings>("PUT", "/api/settings/providers/openai", patch);
 }
 
 export function putOpenRouter(patch: OpenRouterPatch) {
-  return putOrThrow<ProviderSettings>("/api/settings/providers/openrouter", patch);
+  return requestJsonOrThrow<ProviderSettings>("PUT", "/api/settings/providers/openrouter", patch);
 }
 
 export function putZAI(patch: ZAIPatch) {
-  return putOrThrow<ProviderSettings>("/api/settings/providers/zai", patch);
+  return requestJsonOrThrow<ProviderSettings>("PUT", "/api/settings/providers/zai", patch);
 }
 
 export function putCodex(patch: CodexPatch) {
-  return putOrThrow<ProviderSettings>("/api/settings/providers/codex", patch);
+  return requestJsonOrThrow<ProviderSettings>("PUT", "/api/settings/providers/codex", patch);
+}
+
+export async function getCodexServerAuth(): Promise<CodexServerAuthStatus> {
+  const r = await apiFetch("/api/settings/providers/codex/server-auth");
+  return jsonOrThrow<CodexServerAuthStatus>(r);
+}
+
+export function importCodexServerAuth() {
+  return requestJsonOrThrow<ProviderSettings>(
+    "POST",
+    "/api/settings/providers/codex/import-server-auth",
+    {},
+  );
 }
 
 export function putPreferredChat(preferred: ChatProvider | null) {
-  return putOrThrow<ProviderSettings>("/api/settings/providers/preferred-chat", {
+  return requestJsonOrThrow<ProviderSettings>("PUT", "/api/settings/providers/preferred-chat", {
     preferred_chat_provider: preferred,
   });
 }

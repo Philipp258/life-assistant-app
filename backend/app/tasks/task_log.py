@@ -18,7 +18,7 @@ import re
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.tasks.models import Task
+from app.tasks.models import Assignee, IntervalUnit, Task
 
 TASK_LOG_FOLDER = "Task Log"
 
@@ -39,8 +39,8 @@ def slugify_title(title: str) -> str:
 
 def is_recurring_assistant_task(
     *,
-    assignee: str | None,
-    interval_unit: str | None,
+    assignee: Assignee | None,
+    interval_unit: IntervalUnit | None,
     interval_count: int | None,
 ) -> bool:
     """Identity is scoped to recurring assistant routines only.

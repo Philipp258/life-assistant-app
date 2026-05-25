@@ -45,7 +45,6 @@ COORDINATION_TOOLS = {
     "save_core_memory",
     "get_app_settings",
     "set_app_setting",
-    "self_update",
 }
 
 

@@ -9,11 +9,15 @@ fallback). `pick_stt` is OpenRouter-only — STT lives there permanently.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, cast
 
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from app.agent.providers.codex import DEFAULT_CODEX_MODEL
+from app.agent.providers.codex_auth import CodexSession
+from app.db import SessionLocal
 from app.provider_settings.models import ProviderSettings
 from app.provider_settings.schema import ChatProvider
 
@@ -31,7 +35,7 @@ class ChatPick:
     openrouter_api_key: str | None = None
     zai_api_key: str | None = None
     zai_endpoint: str | None = None
-    codex_auth_json: str | None = None
+    codex_session: CodexSession | None = None
 
 
 @dataclass(frozen=True)
@@ -57,7 +61,7 @@ _DEFAULT_CHAT_MODELS: dict[ChatProvider, str] = {
     "openai": "gpt-5.1",
     "openrouter": "openrouter/auto",
     "zai": "glm-5.1",
-    "codex": "gpt-5-codex",
+    "codex": DEFAULT_CODEX_MODEL,
 }
 
 
@@ -84,7 +88,7 @@ def _configured_chat_providers(row: ProviderSettings) -> set[ChatProvider]:
         out.add("openrouter")
     if row.zai_api_key:
         out.add("zai")
-    if row.codex_auth_json:
+    if row.codex_access_token and row.codex_refresh_token:
         out.add("codex")
     return out
 
@@ -123,13 +127,60 @@ def _build_chat_pick(row: ProviderSettings, provider: ChatProvider) -> ChatPick:
             zai_endpoint=row.zai_endpoint,
         )
     if provider == "codex":
-        assert row.codex_auth_json is not None
+        session = codex_session_from_row(row)
+        assert session is not None
         return ChatPick(
             provider="codex",
             model_name=model_name,
-            codex_auth_json=row.codex_auth_json,
+            codex_session=session,
         )
     raise RuntimeError(f"Unsupported chat provider: {provider}")
+
+
+def _as_aware_utc(value: datetime | None) -> datetime:
+    if value is None:
+        return datetime.fromtimestamp(0, tz=UTC)
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def codex_session_from_row(row: ProviderSettings) -> CodexSession | None:
+    if not row.codex_access_token or not row.codex_refresh_token:
+        return None
+    return CodexSession(
+        auth_mode=row.codex_auth_mode,
+        access_token=row.codex_access_token,
+        refresh_token=row.codex_refresh_token,
+        expires_at=_as_aware_utc(row.codex_expires_at),
+        account_id=row.codex_account_id,
+        plan_type=row.codex_plan_type,
+        id_token_raw=row.codex_id_token,
+        last_refresh=_as_aware_utc(row.codex_last_refresh) if row.codex_last_refresh else None,
+        raw=None,
+    )
+
+
+def _apply_codex_session(row: ProviderSettings, session: CodexSession) -> None:
+    row.codex_auth_mode = session.auth_mode
+    row.codex_access_token = session.access_token
+    row.codex_refresh_token = session.refresh_token
+    row.codex_id_token = session.id_token_raw
+    row.codex_account_id = session.account_id
+    row.codex_plan_type = session.plan_type
+    row.codex_expires_at = session.expires_at
+    row.codex_last_refresh = session.last_refresh
+
+
+def _clear_codex_session(row: ProviderSettings) -> None:
+    row.codex_auth_mode = None
+    row.codex_access_token = None
+    row.codex_refresh_token = None
+    row.codex_id_token = None
+    row.codex_account_id = None
+    row.codex_plan_type = None
+    row.codex_expires_at = None
+    row.codex_last_refresh = None
 
 
 def pick_chat(db: Session) -> ChatPick:
@@ -142,7 +193,7 @@ def pick_chat(db: Session) -> ChatPick:
 
     preferred = row.preferred_chat_provider
     if preferred is not None and preferred in configured:
-        return _build_chat_pick(row, preferred)
+        return _build_chat_pick(row, cast(ChatProvider, preferred))
 
     for candidate in _PREFERENCE_ORDER:
         if candidate in configured:
@@ -179,8 +230,6 @@ def is_chat_configured() -> bool:
 
     Conservative on uncertainty: missing table → False (e.g. a unit test
     that never ran migrations)."""
-    from app.db import SessionLocal
-
     try:
         with SessionLocal() as db:
             row = db.get(ProviderSettings, 1)
@@ -264,9 +313,25 @@ def update_zai(
     return row
 
 
-def update_codex(db: Session, *, auth_json: str | None, chat_model: str | None) -> ProviderSettings:
+def update_codex(
+    db: Session, *, chat_model: str | None, clear_auth: bool = False
+) -> ProviderSettings:
     row = _get_singleton(db)
-    _apply_partial(row, {"codex_auth_json": auth_json, "codex_chat_model": chat_model})
+    if clear_auth:
+        _clear_codex_session(row)
+    _apply_partial(row, {"codex_chat_model": chat_model})
+    db.commit()
+    db.refresh(row)
+    _invalidate_agent()
+    return row
+
+
+def import_codex_session(
+    db: Session, *, session: CodexSession, chat_model: str | None = None
+) -> ProviderSettings:
+    row = _get_singleton(db)
+    _apply_codex_session(row, session)
+    _apply_partial(row, {"codex_chat_model": chat_model})
     db.commit()
     db.refresh(row)
     _invalidate_agent()
@@ -282,21 +347,19 @@ def update_preferred_chat(db: Session, *, preferred: ChatProvider | None) -> Pro
     return row
 
 
-async def persist_codex_auth(blob: str) -> None:
-    """Write a refreshed Codex auth.json blob back to the singleton row.
+async def persist_codex_auth(session: CodexSession) -> None:
+    """Write refreshed Codex credentials back to the singleton row.
 
     Called from inside the Codex provider's httpx auth flow after a
     token refresh. Deliberately does NOT call `_invalidate_agent` — the
-    agent is mid-request when this fires, and the next request reads
-    the same column anyway.
+    agent is mid-request when this fires, and the next request reads the
+    same columns anyway.
     """
-    from app.db import SessionLocal
-
     with SessionLocal() as db:
         row = db.get(ProviderSettings, 1)
         if row is None:
             return
-        row.codex_auth_json = blob
+        _apply_codex_session(row, session)
         db.commit()
 
 

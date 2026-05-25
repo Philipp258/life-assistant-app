@@ -137,6 +137,6 @@ def test_real_shipped_defaults_listed():
 
     metas = store.list_skills()
     names = {m.name: m for m in metas}
-    for required in ("add-skills", "github", "self-update"):
+    for required in ("add-skills", "improve-life-assistant", "self-update"):
         assert required in names, f"default skill {required!r} missing from list"
         assert names[required].source == "default"

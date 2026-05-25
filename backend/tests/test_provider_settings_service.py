@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy.orm import Session
 
+from app.agent.providers.codex_auth import CodexSession
 from app.provider_settings import service
 from app.provider_settings.models import ProviderSettings
 
@@ -24,9 +27,32 @@ def empty_settings(db_session: Session) -> None:
     row.zai_api_key = None
     row.zai_endpoint = None
     row.zai_chat_model = None
-    row.codex_auth_json = None
+    row.codex_auth_mode = None
+    row.codex_access_token = None
+    row.codex_refresh_token = None
+    row.codex_id_token = None
+    row.codex_account_id = None
+    row.codex_plan_type = None
+    row.codex_expires_at = None
+    row.codex_last_refresh = None
     row.codex_chat_model = None
     db_session.commit()
+
+
+def _codex_session(
+    access_token: str = "access-token",
+    refresh_token: str = "refresh-token",
+) -> CodexSession:
+    return CodexSession(
+        auth_mode="chatgpt",
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+        account_id="acct-test",
+        plan_type="pro",
+        id_token_raw="id-token",
+        last_refresh=datetime.now(UTC),
+    )
 
 
 def test_is_chat_configured_false_when_empty(db_session: Session, empty_settings: None) -> None:
@@ -74,11 +100,16 @@ def test_update_zai_round_trip_with_endpoint(db_session: Session, empty_settings
 
 
 def test_update_codex_round_trip(db_session: Session, empty_settings: None) -> None:
-    blob = '{"auth_mode":"chatgpt","tokens":{"access_token":"x","refresh_token":"y"}}'
-    service.update_codex(db_session, auth_json=blob, chat_model="gpt-5-codex")
+    service.import_codex_session(
+        db_session,
+        session=_codex_session(access_token="x", refresh_token="y"),
+        chat_model="gpt-5.5",
+    )
     pick = service.pick_chat(db_session)
     assert pick.provider == "codex"
-    assert pick.codex_auth_json == blob
+    assert pick.codex_session is not None
+    assert pick.codex_session.access_token == "x"
+    assert pick.codex_session.refresh_token == "y"
 
 
 def test_partial_update_preserves_other_field(db_session: Session, empty_settings: None) -> None:
@@ -105,6 +136,18 @@ def test_default_model_used_when_user_model_unset(
     service.update_openrouter(db_session, api_key="sk-or", chat_model=None)
     pick = service.pick_chat(db_session)
     assert pick.model_name == "openrouter/auto"
+
+
+def test_codex_default_model_matches_provider_constant(
+    db_session: Session, empty_settings: None
+) -> None:
+    from app.agent.providers.codex import DEFAULT_CODEX_MODEL
+
+    service.import_codex_session(db_session, session=_codex_session(), chat_model=None)
+    pick = service.pick_chat(db_session)
+
+    assert pick.provider == "codex"
+    assert pick.model_name == DEFAULT_CODEX_MODEL
 
 
 def test_preferred_chat_honoured_when_configured(db_session: Session, empty_settings: None) -> None:
@@ -179,11 +222,16 @@ def test_pick_stt_returns_openrouter_key(db_session: Session, empty_settings: No
 def test_persist_codex_auth_updates_blob(db_session: Session, empty_settings: None) -> None:
     import asyncio
 
-    service.update_codex(db_session, auth_json="initial-blob", chat_model=None)
-    asyncio.run(service.persist_codex_auth("rotated-blob"))
+    service.import_codex_session(db_session, session=_codex_session(), chat_model=None)
+    asyncio.run(
+        service.persist_codex_auth(
+            _codex_session(access_token="rotated-access", refresh_token="rotated-refresh")
+        )
+    )
 
     row = service.get_settings(db_session)
-    assert row.codex_auth_json == "rotated-blob"
+    assert row.codex_access_token == "rotated-access"
+    assert row.codex_refresh_token == "rotated-refresh"
 
 
 def test_persist_codex_auth_writes_even_if_provider_inactive(
@@ -192,13 +240,17 @@ def test_persist_codex_auth_writes_even_if_provider_inactive(
     """Refresh callback should still write — it's keyed by row, not by preference."""
     import asyncio
 
-    service.update_codex(db_session, auth_json="old", chat_model=None)
+    service.import_codex_session(db_session, session=_codex_session(), chat_model=None)
     service.update_zai(db_session, api_key="zai-k", endpoint=None, chat_model=None)
     service.update_preferred_chat(db_session, preferred="zai")
 
-    asyncio.run(service.persist_codex_auth("new"))
+    asyncio.run(
+        service.persist_codex_auth(
+            _codex_session(access_token="new-access", refresh_token="new-refresh")
+        )
+    )
     row = service.get_settings(db_session)
-    assert row.codex_auth_json == "new"
+    assert row.codex_access_token == "new-access"
 
 
 def test_update_invalidates_agent_cache(db_session: Session, empty_settings: None) -> None:

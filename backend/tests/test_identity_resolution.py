@@ -1,94 +1,117 @@
-"""Phase 2: assistant name parsed from behavior.md + injected into prompts."""
+"""Identity is structured: stored in app_settings, no markdown parsing."""
 
 from __future__ import annotations
-
-from pathlib import Path
 
 import pytest
 
 
-@pytest.fixture
-def core_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    root = tmp_path / "core"
-    root.mkdir()
-    import app.config as config_mod
-    from app.knowledge import core as core_mod
+def test_set_and_resolve_assistant_name(_test_db):
+    from app.db import SessionLocal
+    from app.knowledge import identity
 
-    monkeypatch.setattr(config_mod, "CORE_DIR", root, raising=True)
-    monkeypatch.setattr(core_mod, "CORE_DIR", root, raising=True)
-    return root
+    with SessionLocal() as db:
+        identity.set_assistant_name(db, "Atlas")
+
+    assert identity.resolve_assistant_name() == "Atlas"
 
 
-def _write_behavior(core_root: Path, body: str) -> None:
-    (core_root / "behavior.md").write_text(body, encoding="utf-8")
+def test_set_and_resolve_user_name(_test_db):
+    from app.db import SessionLocal
+    from app.knowledge import identity
+
+    with SessionLocal() as db:
+        identity.set_user_name(db, "Phil")
+
+    assert identity.resolve_user_name() == "Phil"
 
 
-def test_resolves_name_from_first_line(core_root: Path):
-    from app.knowledge.identity import resolve_assistant_name
+def test_resolver_raises_when_assistant_name_missing(_test_db):
+    from app.db import SessionLocal
+    from app.knowledge import identity
+    from app.settings.models import AppSetting
 
-    _write_behavior(core_root, "**Name:** Atlas\n\nBe terse.\n")
-    assert resolve_assistant_name() == "Atlas"
+    with SessionLocal() as db:
+        db.query(AppSetting).filter(AppSetting.key == "assistant_name").delete()
+        db.commit()
 
-
-def test_resolves_name_after_blank_lines(core_root: Path):
-    from app.knowledge.identity import resolve_assistant_name
-
-    _write_behavior(core_root, "\n\n**Name:** Atlas\n\nBe terse.\n")
-    assert resolve_assistant_name() == "Atlas"
-
-
-def test_falls_back_when_default_seed_in_place(core_root: Path):
-    from app.knowledge import core as core_mod
-    from app.knowledge.identity import FALLBACK_NAME, resolve_assistant_name
-
-    core_mod.seed_if_missing()
-    assert resolve_assistant_name() == FALLBACK_NAME
+    with pytest.raises(identity.IdentityNotSet):
+        identity.resolve_assistant_name()
 
 
-def test_falls_back_when_file_missing(core_root: Path):
-    from app.knowledge.identity import FALLBACK_NAME, resolve_assistant_name
+def test_resolver_raises_when_user_name_missing(_test_db):
+    from app.db import SessionLocal
+    from app.knowledge import identity
+    from app.settings.models import AppSetting
 
-    assert resolve_assistant_name() == FALLBACK_NAME
+    with SessionLocal() as db:
+        db.query(AppSetting).filter(AppSetting.key == "user_name").delete()
+        db.commit()
 
-
-def test_only_scans_first_8_lines(core_root: Path):
-    from app.knowledge.identity import FALLBACK_NAME, resolve_assistant_name
-
-    body = "\n".join(["filler"] * 20 + ["**Name:** Atlas"])
-    _write_behavior(core_root, body)
-    assert resolve_assistant_name() == FALLBACK_NAME
-
-
-def test_handles_extra_whitespace(core_root: Path):
-    from app.knowledge.identity import resolve_assistant_name
-
-    _write_behavior(core_root, "  **Name:**   Atlas   \n")
-    assert resolve_assistant_name() == "Atlas"
+    with pytest.raises(identity.IdentityNotSet):
+        identity.resolve_user_name()
 
 
-def test_multi_word_name(core_root: Path):
-    from app.knowledge.identity import resolve_assistant_name
+def test_identity_complete_requires_both(_test_db):
+    from app.db import SessionLocal
+    from app.knowledge import identity
+    from app.settings.models import AppSetting
 
-    _write_behavior(core_root, "**Name:** Captain Nemo\n")
-    assert resolve_assistant_name() == "Captain Nemo"
+    with SessionLocal() as db:
+        assert identity.identity_complete(db)
+        db.query(AppSetting).filter(AppSetting.key == "user_name").delete()
+        db.commit()
+        assert not identity.identity_complete(db)
 
 
-def test_name_interpolated_into_general_prompt(_test_db, core_root: Path):
-    """Conftest seeds the singleton user as already-onboarded so the
-    general-prompt branch runs."""
+@pytest.mark.parametrize("bad", ["", "   ", "x" * 65])
+def test_set_assistant_name_rejects_invalid(_test_db, bad: str):
+    from app.db import SessionLocal
+    from app.knowledge import identity
+
+    with SessionLocal() as db:
+        with pytest.raises(ValueError):
+            identity.set_assistant_name(db, bad)
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "x" * 65])
+def test_set_user_name_rejects_invalid(_test_db, bad: str):
+    from app.db import SessionLocal
+    from app.knowledge import identity
+
+    with SessionLocal() as db:
+        with pytest.raises(ValueError):
+            identity.set_user_name(db, bad)
+
+
+def test_set_strips_whitespace(_test_db):
+    from app.db import SessionLocal
+    from app.knowledge import identity
+
+    with SessionLocal() as db:
+        stored = identity.set_assistant_name(db, "  Atlas  ")
+    assert stored == "Atlas"
+    assert identity.resolve_assistant_name() == "Atlas"
+
+
+def test_identity_section_in_general_prompt(_test_db):
     from app.agent import build_system_prompt
 
-    _write_behavior(core_root, "**Name:** Atlas\n")
     prompt = build_system_prompt(None)
 
-    assert "You are Atlas, the assistant inside Life Assistant" in prompt
+    assert "## Identity" in prompt
+    assert "Your name is Atlas." in prompt
+    assert "You are talking with Phil." in prompt
 
 
-def test_fallback_name_interpolated_when_unbranded(_test_db, core_root: Path):
+def test_build_system_prompt_raises_when_user_name_missing(_test_db):
     from app.agent import build_system_prompt
-    from app.knowledge import core as core_mod
+    from app.db import SessionLocal
+    from app.knowledge.identity import IdentityNotSet
+    from app.settings.models import AppSetting
 
-    core_mod.seed_if_missing()
-    prompt = build_system_prompt(None)
+    with SessionLocal() as db:
+        db.query(AppSetting).filter(AppSetting.key == "user_name").delete()
+        db.commit()
 
-    assert "You are Assistant, the assistant inside Life Assistant" in prompt
+    with pytest.raises(IdentityNotSet):
+        build_system_prompt(None)

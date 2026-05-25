@@ -1,9 +1,10 @@
 from collections.abc import Iterator
-from typing import Any
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
+from sqlalchemy.engine.interfaces import DBAPIConnection
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.pool import ConnectionPoolEntry
 
 from app.config import DATA_DIR, settings
 
@@ -21,7 +22,9 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 
 
 @event.listens_for(Engine, "connect")
-def _enable_sqlite_wal(dbapi_connection: Any, _connection_record: Any) -> None:
+def _enable_sqlite_wal(
+    dbapi_connection: DBAPIConnection, _connection_record: ConnectionPoolEntry
+) -> None:
     if engine.dialect.name != "sqlite":
         return
     cursor = dbapi_connection.cursor()

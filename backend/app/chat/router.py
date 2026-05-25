@@ -1,15 +1,12 @@
 """Chat endpoints — initial reads + the one bidirectional channel.
 
-Phase 5: there is exactly one main chat (the singleton `task_id IS NULL`
-session). Multi-chat affordances were dropped — `GET /api/chat/main`
-replaces the old session list, and there is no longer a way to spawn a
-new general session.
+There is one main chat: the singleton `task_id IS NULL` session served
+by `GET /api/chat/main`.
 
-Turn delivery is no longer request/response. The REST routes here only
-serve the *initial* page load (full hydrated history) and the slash
-command list. Everything live — sending a message, streaming the reply,
-autonomous task wakes finishing, slash commands — runs over the single
-WebSocket in `app.chat.ws`. There is no streaming POST and no SSE.
+REST routes here only serve the initial page load (full hydrated
+history) and the slash command list. Everything live — sending a
+message, streaming the reply, autonomous task wakes finishing, slash
+commands — runs over the single WebSocket in `app.chat.ws`.
 """
 
 from __future__ import annotations

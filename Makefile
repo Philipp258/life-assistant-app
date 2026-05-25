@@ -1,4 +1,4 @@
-.PHONY: dev backend frontend set-password gen-vapid
+.PHONY: dev backend frontend set-password set-assistant-name set-user-name gen-vapid
 
 # Per-worktree overrides come from .env (set by scripts/wtree.sh).
 BACKEND_PORT ?= 8000
@@ -17,6 +17,14 @@ frontend:
 set-password:
 	@if [ -z "$(PASSWORD)" ]; then echo "usage: make set-password PASSWORD=<pw>" >&2; exit 2; fi
 	cd backend && uv run python -m app.users.set_password "$(PASSWORD)"
+
+set-assistant-name:
+	@if [ -z "$(NAME)" ]; then echo "usage: make set-assistant-name NAME=<name>" >&2; exit 2; fi
+	cd backend && uv run python -m app.knowledge.set_name --assistant "$(NAME)"
+
+set-user-name:
+	@if [ -z "$(NAME)" ]; then echo "usage: make set-user-name NAME=<name>" >&2; exit 2; fi
+	cd backend && uv run python -m app.knowledge.set_name --user "$(NAME)"
 
 gen-vapid:
 	cd backend && uv run python scripts/gen_vapid_keys.py $(ARGS)

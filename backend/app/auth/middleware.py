@@ -11,6 +11,7 @@ from __future__ import annotations
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+from typing_extensions import override
 
 PUBLIC_PATHS = frozenset(
     {
@@ -23,6 +24,7 @@ PUBLIC_PATHS = frozenset(
 
 
 class SessionAuthMiddleware(BaseHTTPMiddleware):
+    @override
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path
         if not path.startswith("/api"):

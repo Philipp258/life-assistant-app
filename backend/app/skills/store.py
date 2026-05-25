@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from app.config import DEFAULTS_SKILLS_DIR, SKILLS_DIR
+from app.config import DEFAULTS_SKILLS_DIR, REPO_ROOT, SKILLS_DIR
 from app.knowledge.store import _parse_frontmatter
 
 SKILL_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -66,8 +66,6 @@ def _validate_name(name: str) -> None:
 
 def _rel_path(p: Path) -> str:
     """Return POSIX path relative to repo root, for surfacing in API + prompt."""
-    from app.config import REPO_ROOT
-
     try:
         return p.resolve().relative_to(REPO_ROOT.resolve()).as_posix()
     except ValueError:
@@ -132,7 +130,11 @@ def list_skills() -> list[SkillMeta]:
 def read_skill(name: str) -> Skill:
     """Read a single skill by name. Defaults take priority over user copies."""
     _validate_name(name)
-    for source, root in (("default", DEFAULTS_SKILLS_DIR), ("user", SKILLS_DIR)):
+    sources: tuple[tuple[SkillSource, Path], ...] = (
+        ("default", DEFAULTS_SKILLS_DIR),
+        ("user", SKILLS_DIR),
+    )
+    for source, root in sources:
         p = root / name / "SKILL.md"
         if not p.is_file():
             continue
@@ -143,7 +145,7 @@ def read_skill(name: str) -> Skill:
             description=meta.get("description") or "",
             path=_rel_path(p),
             body=body,
-            source=source,  # type: ignore[arg-type]
+            source=source,
         )
     raise SkillError(f"skill not found: {name!r}")
 

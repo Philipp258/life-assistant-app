@@ -2,9 +2,26 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+
+from app.agent.providers.codex_auth import CodexSession
+
+
+def _codex_session() -> CodexSession:
+    return CodexSession(
+        auth_mode="chatgpt",
+        access_token="access-token-secret",
+        refresh_token="refresh-token-secret",
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+        account_id="acct-router",
+        plan_type="plus",
+        id_token_raw="id-token-secret",
+        last_refresh=datetime.now(UTC),
+    )
 
 
 @pytest.fixture
@@ -24,7 +41,14 @@ def empty_settings(db_session: Session) -> None:
     row.zai_api_key = None
     row.zai_endpoint = None
     row.zai_chat_model = None
-    row.codex_auth_json = None
+    row.codex_auth_mode = None
+    row.codex_access_token = None
+    row.codex_refresh_token = None
+    row.codex_id_token = None
+    row.codex_account_id = None
+    row.codex_plan_type = None
+    row.codex_expires_at = None
+    row.codex_last_refresh = None
     row.codex_chat_model = None
     db_session.commit()
 
@@ -96,14 +120,29 @@ def test_put_zai_with_endpoint(client: TestClient, empty_settings: None) -> None
     }
 
 
-def test_put_codex_round_trip(client: TestClient, empty_settings: None) -> None:
-    blob = '{"auth_mode":"chatgpt","tokens":{"access_token":"x","refresh_token":"y"}}'
+def test_import_codex_server_auth_round_trip(
+    client: TestClient, empty_settings: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.provider_settings import codex_server_auth
+
+    async def _load_server_session() -> CodexSession:
+        return _codex_session()
+
+    monkeypatch.setattr(codex_server_auth, "load_server_session", _load_server_session)
+    r = client.post("/api/settings/providers/codex/import-server-auth")
+    assert r.status_code == 200
+    assert r.json()["codex"] == {"configured": True, "chat_model": None}
+    assert "access-token-secret" not in r.text
+    assert "refresh-token-secret" not in r.text
+
+
+def test_put_codex_model_only_round_trip(client: TestClient, empty_settings: None) -> None:
     r = client.put(
         "/api/settings/providers/codex",
-        json={"auth_json": blob, "chat_model": "gpt-5-codex"},
+        json={"chat_model": "gpt-5.5"},
     )
     assert r.status_code == 200
-    assert r.json()["codex"] == {"configured": True, "chat_model": "gpt-5-codex"}
+    assert r.json()["codex"] == {"configured": False, "chat_model": "gpt-5.5"}
 
 
 def test_put_omitted_api_key_preserves_existing(client: TestClient, empty_settings: None) -> None:
@@ -188,17 +227,12 @@ def test_put_strips_whitespace_around_api_key(client: TestClient, empty_settings
     assert row.openai_api_key == "sk-padded"
 
 
-def test_put_codex_still_accepts_multiline_blob(client: TestClient, empty_settings: None) -> None:
-    """The validator only applies to single-line API keys; Codex's
-    `auth_json` is intentionally a multi-line JSON blob."""
-    blob = (
-        '{\n  "auth_mode": "chatgpt",\n  "tokens": {"access_token": "x", "refresh_token": "y"}\n}'
-    )
+def test_put_codex_rejects_manual_auth_json(client: TestClient, empty_settings: None) -> None:
     r = client.put(
         "/api/settings/providers/codex",
-        json={"auth_json": blob, "chat_model": "gpt-5-codex"},
+        json={"auth_json": '{"tokens": {}}', "chat_model": "gpt-5.5"},
     )
-    assert r.status_code == 200
+    assert r.status_code == 422
 
 
 def test_put_preferred_chat(client: TestClient, empty_settings: None) -> None:

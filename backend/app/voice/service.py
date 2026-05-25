@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.db import SessionLocal
 from app.provider_settings import service as provider_service
 from app.voice.providers import openrouter as openrouter_provider
 
@@ -54,8 +55,6 @@ async def transcribe_audio(*, audio: bytes, content_type: str | None) -> Transcr
     if not audio:
         raise VoiceProviderError("Audio payload is empty.")
 
-    from app.db import SessionLocal
-
     with SessionLocal() as db:
         try:
             pick = provider_service.pick_stt(db)
@@ -85,8 +84,6 @@ async def synthesize_speech(*, text: str) -> SpeechSynthesisResult:
         raise VoiceProviderError(
             f"Text is too long for synthesis (max {MAX_SYNTHESIS_CHARS} characters)."
         )
-
-    from app.db import SessionLocal
 
     with SessionLocal() as db:
         pick = provider_service.pick_tts(db)

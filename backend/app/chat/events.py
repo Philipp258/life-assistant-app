@@ -3,36 +3,29 @@
 A "terminal event" is the hidden `<task_handoff>` row a task records
 when it completes, blocks back to the user, or reschedules itself (see
 `app.chat.service.save_task_handoff`, written by the terminal task tools
-and the runner's stall/error escalations). It is the same payload the
-old separate "main-chat handoff" wake used — now it is just an event the
-main session drains on its next turn.
+and the runner's stall/error escalations). The main session drains
+these events on its next turn.
 
-There is no subscription graph anymore. The singleton main session
-*implicitly* drains every task-terminal event, so routine, recurrence,
-and improve-life-assistant-sweep tasks reach the user just like main-created ones.
 State is a single high-water cursor per consuming session
 (`ChatSession.event_cursor_id`): exactly-once and restart-safe because
 the cursor lives in the DB and only advances after a turn that actually
 saw the events.
 
-Shape: the drained handoffs are delivered as one synthetic *user-role*
+Shape: drained handoffs are delivered as one synthetic *user-role*
 report appended to the turn's history (context only — never persisted).
-A history that ends on a user turn is the normal, valid provider
-request shape, and — crucially — it gives the model an unambiguous
-"respond to THIS" target. The earlier tool-call/tool-return shape ended
-the history on a tool return after the prior assistant turn, which a
-model reads as "continue the conversation": on an autonomous wake (no
-real user message) it would re-answer the last thread *and* address the
-updates, duplicating a prior answer. The report is explicitly framed as
-not-from-the-user and "don't re-answer earlier conversation".
+Ending the history on a user turn is a valid provider request shape and
+gives the model an unambiguous "respond to THIS" target. The report is
+explicitly framed as not-from-the-user and "don't re-answer earlier
+conversation" so an autonomous wake addresses only these updates
+instead of continuing the prior thread.
 
 Silence: a drain turn runs with the `do_nothing` output tool
-(`SILENCE_OUTPUT`). Routine internal status (recurrence ticks, waits,
-reschedules, polling the user never asked to track) is noise — the model
-calls `do_nothing` to end the turn with no message, and `app.chat.runner`
-maps that to a cursor-only commit (no row, no push). It surfaces only
-what the user needs awareness of or a decision on; when genuinely unsure
-it surfaces rather than swallow.
+(`SILENCE_OUTPUT`). When the drained updates are routine internal
+status the user did not ask to track, the model calls `do_nothing` to
+end the turn with no message, and `app.chat.runner` maps that to a
+cursor-only commit (no row, no push). It surfaces only what the user
+needs awareness of or a decision on; when genuinely unsure it surfaces
+rather than swallow.
 """
 
 from __future__ import annotations
@@ -44,13 +37,14 @@ from pydantic_ai import ToolOutput
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
+    SystemPromptPart,
     UserPromptPart,
 )
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.chat.models import ChatSession, Message
-from app.chat.service import extract_task_handoff_text
+from app.chat.service import extract_task_handoff_text, parse_message
 from app.chat.session_policy import consumes_terminal_events
 from app.tasks.models import Task
 
@@ -80,18 +74,13 @@ SILENCE_OUTPUT = ToolOutput(
 
 def _handoff_text_from_row(row: Message) -> str | None:
     """Pull the handoff body out of a persisted message row, if it is one."""
-    raw = row.parts_json if isinstance(row.parts_json, dict) else {}
-    parts = raw.get("parts", []) if isinstance(raw, dict) else []
-    for part in parts:
-        if not isinstance(part, dict):
+    msg = parse_message(row)
+    if msg is None:
+        return None
+    for part in msg.parts:
+        if not isinstance(part, SystemPromptPart):
             continue
-        kind = part.get("part_kind") or part.get("kind")
-        if kind not in ("system-prompt", "SystemPromptPart"):
-            continue
-        content = part.get("content")
-        if not isinstance(content, str):
-            continue
-        handoff = extract_task_handoff_text(content)
+        handoff = extract_task_handoff_text(part.content)
         if handoff is not None:
             return handoff
     return None
@@ -187,7 +176,7 @@ def latest_terminal_event_id(session: Session) -> int | None:
 
 def has_undrained_events(session: Session, consuming_session_id: int) -> bool:
     consumer = session.get(ChatSession, consuming_session_id)
-    if not consumes_terminal_events(consumer):
+    if consumer is None or not consumes_terminal_events(consumer):
         return False
     cursor = consumer.event_cursor_id or 0
     for row in _candidate_rows(session, after_id=cursor):

@@ -70,12 +70,18 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     load();
   }, [load]);
 
-  // While onboarding, poll so the UI flips back to normal (TabBar shown,
-  // routes restored) the moment the agent calls `mark_onboarded`. The
-  // endpoint is tiny; 4s feels live without being noisy. Stops once the
-  // flag flips.
+  // While chat-onboarding, poll so the UI flips back to normal (TabBar shown,
+  // routes restored) the moment the agent calls `mark_onboarded`. Provider
+  // setup is an explicit stepper; it calls refetch when the user finishes so
+  // the optional voice step does not get skipped by a background poll.
   useEffect(() => {
-    if (state.kind !== "ready" || !state.identity.isOnboarding) return;
+    if (
+      state.kind !== "ready" ||
+      !state.identity.isOnboarding ||
+      state.identity.onboardingState !== "needs_chat"
+    ) {
+      return;
+    }
     const id = window.setInterval(load, 4000);
     return () => window.clearInterval(id);
   }, [state, load]);

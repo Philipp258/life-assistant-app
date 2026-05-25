@@ -31,10 +31,12 @@ from datetime import datetime
 from typing import Any
 
 from pydantic_ai import Agent, RunContext
+from sqlalchemy.orm import Session as SASession
 
 from app.agent.deps import AgentDeps
 from app.agent.tools._paging import normalize_page, paginate
 from app.agent.tools._task_scope import current_task_id, only_in_task_chat
+from app.chat.service import latest_task_handoff, save_task_handoff
 from app.datetime_utils import normalize_to_naive_utc, serialize_utc, utc_now
 from app.db import SessionLocal
 from app.tasks import service
@@ -49,8 +51,8 @@ from app.tasks.schemas import (
 from app.tasks.task_log import task_log_path
 
 
-def _task_log_for_agent(task: Any) -> str | None:
-    line = getattr(task, "task_log_line", None)
+def _task_log_for_agent(task: Task) -> str | None:
+    line = task.task_log_line
     return task_log_path(line) if line else None
 
 
@@ -97,8 +99,6 @@ def do_create_task(
     due_at: datetime | None = None,
     interval_unit: IntervalUnit | None = None,
     interval_count: int | None = None,
-    *,
-    creator_session_id: int | None = None,
 ) -> dict[str, Any]:
     # Ergonomics: if a unit was supplied but count wasn't, assume 1.
     if interval_unit is not None and interval_count is None:
@@ -113,12 +113,6 @@ def do_create_task(
         interval_unit=interval_unit,
         interval_count=interval_count,
     )
-    # `creator_session_id` no longer drives any subscription: the main
-    # session implicitly drains every task's terminal events
-    # (`app.chat.events`), so a task created from anywhere — main chat, a
-    # routine, recurrence, the improve-life-assistant sweep — surfaces to the user
-    # the same way. Kept on the signature as harmless provenance context.
-    _ = creator_session_id
     with SessionLocal() as session:
         try:
             task = service.create_task(session, data)
@@ -184,40 +178,49 @@ def do_get_task(task_id: int) -> dict[str, Any]:
     return out
 
 
-_UNSET: Any = object()
+class _UnsetType:
+    _instance: "_UnsetType | None" = None
+
+    def __new__(cls) -> "_UnsetType":
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+
+_UNSET = _UnsetType()
 
 
 def do_update_task(
     task_id: int,
     *,
-    title: str | Any = _UNSET,
-    description: str | None | Any = _UNSET,
-    is_done: bool | Any = _UNSET,
-    assignee: Assignee | Any = _UNSET,
-    labels: list[str] | Any = _UNSET,
-    do_at: datetime | None | Any = _UNSET,
-    due_at: datetime | None | Any = _UNSET,
-    interval_unit: IntervalUnit | None | Any = _UNSET,
-    interval_count: int | None | Any = _UNSET,
+    title: str | _UnsetType = _UNSET,
+    description: str | None | _UnsetType = _UNSET,
+    is_done: bool | _UnsetType = _UNSET,
+    assignee: Assignee | _UnsetType = _UNSET,
+    labels: list[str] | _UnsetType = _UNSET,
+    do_at: datetime | None | _UnsetType = _UNSET,
+    due_at: datetime | None | _UnsetType = _UNSET,
+    interval_unit: IntervalUnit | None | _UnsetType = _UNSET,
+    interval_count: int | None | _UnsetType = _UNSET,
 ) -> dict[str, Any]:
     fields: dict[str, Any] = {}
-    if title is not _UNSET:
+    if not isinstance(title, _UnsetType):
         fields["title"] = title
-    if description is not _UNSET:
+    if not isinstance(description, _UnsetType):
         fields["description"] = description
-    if is_done is not _UNSET:
+    if not isinstance(is_done, _UnsetType):
         fields["is_done"] = is_done
-    if assignee is not _UNSET:
+    if not isinstance(assignee, _UnsetType):
         fields["assignee"] = assignee
-    if labels is not _UNSET:
+    if not isinstance(labels, _UnsetType):
         fields["labels"] = labels
-    if do_at is not _UNSET:
+    if not isinstance(do_at, _UnsetType):
         fields["do_at"] = do_at
-    if due_at is not _UNSET:
+    if not isinstance(due_at, _UnsetType):
         fields["due_at"] = due_at
-    if interval_unit is not _UNSET:
+    if not isinstance(interval_unit, _UnsetType):
         fields["interval_unit"] = interval_unit
-    if interval_count is not _UNSET:
+    if not isinstance(interval_count, _UnsetType):
         fields["interval_count"] = interval_count
     if not fields:
         return {
@@ -262,7 +265,7 @@ def _already_terminal_result(task: Task) -> dict[str, Any]:
     return result
 
 
-def _has_recorded_handoff(session: Any, task: Task) -> bool:
+def _has_recorded_handoff(session: SASession, task: Task) -> bool:
     """Whether a terminal tool already recorded a handoff for this
     task's current chat (cycle). That — not assignee/do_at on its own —
     is what makes a *subsequent* terminal call in the same agent turn a
@@ -270,12 +273,10 @@ def _has_recorded_handoff(session: Any, task: Task) -> bool:
     assignee change must still go through (handled by the callers); only
     redundant repeats are blocked.
     """
-    from app.chat.service import latest_task_handoff
-
     return latest_task_handoff(session, task.chat_session_id) is not None
 
 
-def _has_active_terminal_handoff(session: Any, task: Task) -> bool:
+def _has_active_terminal_handoff(session: SASession, task: Task) -> bool:
     if not _has_recorded_handoff(session, task):
         return False
     if task.assignee == "user":
@@ -303,8 +304,6 @@ def do_complete_task(task_id: int, handoff: str) -> dict[str, Any]:
         task = service.update_task(session, task_id, TaskUpdate(is_done=True))
         if task is None:
             return {"error": "task not found", "task_id": task_id}
-        from app.chat.service import save_task_handoff
-
         save_task_handoff(session, task.chat_session_id, text)
         return _summarize(task)
 
@@ -329,8 +328,6 @@ def do_reassign_task(task_id: int, assignee: Assignee, handoff: str) -> dict[str
         task = service.update_task(session, task_id, TaskUpdate(assignee=assignee))
         if task is None:
             return {"error": "task not found", "task_id": task_id}
-        from app.chat.service import save_task_handoff
-
         save_task_handoff(session, task.chat_session_id, text)
         return _summarize(task)
 
@@ -366,8 +363,6 @@ def do_reschedule_task(task_id: int, do_at: datetime, handoff: str) -> dict[str,
         task = service.reschedule_task(session, task_id, do_at)
         if task is None:
             return {"error": "task not found", "task_id": task_id}
-        from app.chat.service import save_task_handoff
-
         save_task_handoff(session, task.chat_session_id, text)
         return _summarize(task)
 
@@ -472,7 +467,6 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
           recurrence. Pass both together. Pass `do_at` alongside to
           anchor the first run.
         """
-        creator = ctx.deps.session_id if ctx.deps is not None else None
         return do_create_task(
             title=title,
             description=description,
@@ -482,7 +476,6 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
             due_at=due_at,
             interval_unit=interval_unit,
             interval_count=interval_count,
-            creator_session_id=creator,
         )
 
     @agent.tool_plain

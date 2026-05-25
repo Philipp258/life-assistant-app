@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from sqlalchemy import select
 
@@ -51,17 +53,17 @@ def list_tasks(
     done: bool | None = Query(default=None),
     cursor: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
-) -> dict:
+) -> dict[str, Any]:
     """List tasks for the two-axis Tasks screen.
 
-    - no `done` → legacy slice (open-before-done) for old saved views.
+    - `done` omitted → open-before-done slice (used by saved views that
+      do not split on done state). `status` filter applies here.
     - `done=false` → open feed, last-activity order.
     - `done=true` → keyset-paginated done tail; response carries
       `next_cursor` (null when exhausted).
 
-    `status` is still accepted but only applies to the legacy slice — the
-    tri-tier inner grouping classifies scheduled/waiting client-side, so
-    the redesigned client no longer sends it.
+    The tri-tier inner grouping classifies scheduled/waiting client-side,
+    so `status` is unused on the `done=false` / `done=true` branches.
     """
     with SessionLocal() as session:
         if done is True:

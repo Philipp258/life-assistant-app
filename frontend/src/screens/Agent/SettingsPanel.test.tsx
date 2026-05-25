@@ -2,14 +2,15 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SettingsPanel } from "./SettingsPanel";
-import type { OpenRouterBlock } from "./providerApi";
+import { ProviderSetupStepper, SettingsPanel } from "./SettingsPanel";
+import type { CodexServerAuthStatus, OpenRouterBlock } from "./providerApi";
 import type { RuntimeSettings } from "./runtimeSettingsApi";
 
 const fetchMock = vi.fn();
+const refetchMock = vi.fn();
 
 vi.mock("@/shell/identity", () => ({
-  useIdentity: () => ({ refetch: vi.fn() }),
+  useIdentity: () => ({ refetch: refetchMock }),
 }));
 
 type FetchInit = RequestInit & { method?: string };
@@ -29,13 +30,35 @@ const defaultProviderSettings = {
   codex: { configured: false, chat_model: null },
 };
 
+const defaultCodexServerAuth: CodexServerAuthStatus = {
+  codex_cli_installed: true,
+  auth_file: "/home/life-assistant/.codex/auth.json",
+  auth_file_exists: true,
+  importable: true,
+  configured: false,
+  expires_at: "2026-05-25T12:00:00Z",
+  plan_type: "plus",
+  error: null,
+  login_command:
+    "sudo -u life-assistant -H env HOME=/home/life-assistant codex login --device-auth",
+  status_command:
+    "sudo -u life-assistant -H env HOME=/home/life-assistant codex login status",
+};
+
 function setupFetch(
   options: {
     runtime?: Partial<RuntimeSettings>;
     provider?: Record<string, unknown>;
+    codexServerAuth?: CodexServerAuthStatus;
+    importProvider?: Record<string, unknown>;
   } = {},
 ) {
   const provider = options.provider ?? defaultProviderSettings;
+  const importProvider = options.importProvider ?? {
+    ...defaultProviderSettings,
+    codex: { configured: true, chat_model: null },
+  };
+  const codexServerAuth = options.codexServerAuth ?? defaultCodexServerAuth;
   const runtime = {
     brave_api_key: "",
     vad_timeout_ms: "",
@@ -47,6 +70,18 @@ function setupFetch(
     const method = init?.method ?? "GET";
     if (input === "/api/settings/providers" && method === "GET") {
       return Promise.resolve(jsonResponse(provider));
+    }
+    if (
+      input === "/api/settings/providers/codex/server-auth" &&
+      method === "GET"
+    ) {
+      return Promise.resolve(jsonResponse(codexServerAuth));
+    }
+    if (
+      input === "/api/settings/providers/codex/import-server-auth" &&
+      method === "POST"
+    ) {
+      return Promise.resolve(jsonResponse(importProvider));
     }
     if (input.startsWith("/api/settings/providers/") && method === "PUT") {
       return Promise.resolve(jsonResponse(provider));
@@ -72,6 +107,7 @@ function toolsForm() {
 
 beforeEach(() => {
   fetchMock.mockReset();
+  refetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
 });
 
@@ -203,6 +239,380 @@ describe("SettingsPanel — Brave API key", () => {
 });
 
 
+describe("SettingsPanel — provider save buttons", () => {
+  function codexForm() {
+    const input = screen.getByLabelText(/chat model/i, {
+      selector: "#codex-model",
+    });
+    const form = input.closest("form");
+    if (!form) throw new Error("Provider input is not inside a form");
+    return form;
+  }
+
+  it("shows Codex server login status and imports it", async () => {
+    setupFetch({
+      provider: {
+        ...defaultProviderSettings,
+        codex: { configured: false, chat_model: null },
+      },
+    });
+    render(<SettingsPanel />);
+
+    expect(await screen.findByText(/codex login --device-auth/i)).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: /use server login/i }),
+    );
+
+    await waitFor(() => {
+      const importCalls = fetchMock.mock.calls.filter(
+        ([url, init]) =>
+          url === "/api/settings/providers/codex/import-server-auth" &&
+          (init as FetchInit | undefined)?.method === "POST",
+      );
+      expect(importCalls).toHaveLength(1);
+    });
+  });
+
+  it("PUTs Codex model when the Codex Save button is clicked", async () => {
+    setupFetch({
+      provider: {
+        ...defaultProviderSettings,
+        codex: { configured: false, chat_model: null },
+      },
+    });
+    render(<SettingsPanel />);
+
+    await screen.findByLabelText(/chat model/i, { selector: "#codex-model" });
+    await userEvent.type(
+      screen.getByLabelText(/chat model/i, { selector: "#codex-model" }),
+      "gpt-5.5",
+    );
+    await userEvent.click(
+      within(codexForm()).getByRole("button", {
+        name: /save/i,
+      }),
+    );
+
+    await waitFor(() => {
+      const putCalls = fetchMock.mock.calls.filter(
+        ([url, init]) =>
+          url === "/api/settings/providers/codex" &&
+          (init as FetchInit | undefined)?.method === "PUT",
+      );
+      expect(putCalls).toHaveLength(1);
+      expect(JSON.parse(putCalls[0][1].body as string)).toEqual({
+        chat_model: "gpt-5.5",
+      });
+    });
+  });
+
+  it("clears Codex auth explicitly", async () => {
+    setupFetch({
+      provider: {
+        ...defaultProviderSettings,
+        codex: { configured: true, chat_model: "gpt-5.5" },
+      },
+    });
+    render(<SettingsPanel />);
+
+    await screen.findByLabelText(/chat model/i, { selector: "#codex-model" });
+    await userEvent.click(
+      within(codexForm()).getByRole("button", {
+        name: /clear/i,
+      }),
+    );
+
+    await waitFor(() => {
+      const putCalls = fetchMock.mock.calls.filter(
+        ([url, init]) =>
+          url === "/api/settings/providers/codex" &&
+          (init as FetchInit | undefined)?.method === "PUT",
+      );
+      expect(putCalls).toHaveLength(1);
+      expect(JSON.parse(putCalls[0][1].body as string)).toEqual({
+        clear_auth: true,
+      });
+    });
+  });
+
+  it("shows all chat providers as peers without an advanced provider drawer", async () => {
+    setupFetch();
+    render(<SettingsPanel />);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: /chatgpt subscription/i,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "OpenRouter" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "OpenAI" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /z\.ai/i })).toBeInTheDocument();
+    expect(screen.queryByText(/advanced chat providers/i)).not.toBeInTheDocument();
+  });
+});
+
+describe("ProviderSetupStepper", () => {
+  it("starts with peer chat-provider choices and pre-fills gpt-5.5", async () => {
+    setupFetch({
+      provider: {
+        ...defaultProviderSettings,
+        openai: { configured: false, chat_model: null },
+        openrouter: { configured: false, chat_model: null, tts_model: null, tts_voice: null },
+        zai: { configured: false, endpoint: "coding-global", chat_model: null },
+        codex: { configured: false, chat_model: null },
+      },
+    });
+
+    render(<ProviderSetupStepper />);
+
+    expect(await screen.findByRole("heading", { name: /choose chat/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: /chatgpt subscription best default/i,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /openrouter api key/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /openai api key/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /z\.ai api key/i })).toBeInTheDocument();
+    expect(
+      (screen.getByLabelText(/chat model/i, {
+        selector: "#setup-codex-model",
+      }) as HTMLInputElement).value,
+    ).toBe("gpt-5.5");
+    expect(document.querySelector("#setup-openrouter-key")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /openrouter api key/i }));
+
+    expect(document.querySelector("#setup-codex-model")).not.toBeInTheDocument();
+    expect(
+      (screen.getByLabelText(/chat model/i, {
+        selector: "#setup-openrouter-model",
+      }) as HTMLInputElement).value,
+    ).toBe("openrouter/auto");
+    expect(document.querySelector("#setup-openrouter-key")).toBeInTheDocument();
+    expect(screen.queryByText(/other chat providers/i)).not.toBeInTheDocument();
+  });
+
+  it("imports Codex, saves the visible default model, and pins chat to Codex", async () => {
+    setupFetch({
+      provider: {
+        ...defaultProviderSettings,
+        zai: { configured: false, endpoint: "coding-global", chat_model: null },
+        codex: { configured: false, chat_model: null },
+      },
+    });
+
+    render(<ProviderSetupStepper />);
+
+    await screen.findByDisplayValue("gpt-5.5");
+    await userEvent.click(
+      screen.getByRole("button", { name: /use chatgpt subscription/i }),
+    );
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            url === "/api/settings/providers/codex/import-server-auth" &&
+            (init as FetchInit | undefined)?.method === "POST",
+        ),
+      ).toBe(true);
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            url === "/api/settings/providers/codex" &&
+            (init as FetchInit | undefined)?.method === "PUT" &&
+            JSON.parse((init as FetchInit).body as string).chat_model === "gpt-5.5",
+        ),
+      ).toBe(true);
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            url === "/api/settings/providers/preferred-chat" &&
+            (init as FetchInit | undefined)?.method === "PUT" &&
+            JSON.parse((init as FetchInit).body as string).preferred_chat_provider ===
+              "codex",
+        ),
+      ).toBe(true);
+    });
+    expect(await screen.findByRole("heading", { name: /voice is optional/i })).toBeInTheDocument();
+  });
+
+  it("configures OpenRouter chat and finishes without showing the voice step", async () => {
+    setupFetch({
+      provider: {
+        ...defaultProviderSettings,
+        openrouter: { configured: false, chat_model: null, tts_model: null, tts_voice: null },
+        zai: { configured: false, endpoint: "coding-global", chat_model: null },
+        codex: { configured: false, chat_model: null },
+      },
+    });
+
+    render(<ProviderSetupStepper />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /openrouter api key/i }));
+    const key = screen.getByLabelText(/api key/i, {
+      selector: "#setup-openrouter-key",
+    });
+    await userEvent.type(key, "sk-or-test");
+    await userEvent.click(screen.getByRole("button", { name: /use openrouter for chat/i }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            url === "/api/settings/providers/openrouter" &&
+            (init as FetchInit | undefined)?.method === "PUT" &&
+            JSON.parse((init as FetchInit).body as string).chat_model ===
+              "openrouter/auto",
+        ),
+      ).toBe(true);
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            url === "/api/settings/providers/preferred-chat" &&
+            (init as FetchInit | undefined)?.method === "PUT" &&
+            JSON.parse((init as FetchInit).body as string).preferred_chat_provider ===
+              "openrouter",
+        ),
+      ).toBe(true);
+      expect(refetchMock).toHaveBeenCalled();
+    });
+    expect(screen.queryByRole("heading", { name: /voice is optional/i })).not.toBeInTheDocument();
+  });
+
+  it("configures OpenAI chat and advances to optional voice", async () => {
+    setupFetch({
+      provider: {
+        ...defaultProviderSettings,
+        openai: { configured: false, chat_model: null },
+        openrouter: { configured: false, chat_model: null, tts_model: null, tts_voice: null },
+        zai: { configured: false, endpoint: "coding-global", chat_model: null },
+        codex: { configured: false, chat_model: null },
+      },
+    });
+
+    render(<ProviderSetupStepper />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /openai api key/i }));
+    expect((screen.getByLabelText(/chat model/i) as HTMLInputElement).value).toBe("gpt-5.1");
+    await userEvent.type(screen.getByLabelText(/api key/i), "sk-test");
+    await userEvent.click(screen.getByRole("button", { name: /use openai/i }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            url === "/api/settings/providers/openai" &&
+            (init as FetchInit | undefined)?.method === "PUT" &&
+            JSON.parse((init as FetchInit).body as string).chat_model === "gpt-5.1",
+        ),
+      ).toBe(true);
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            url === "/api/settings/providers/preferred-chat" &&
+            (init as FetchInit | undefined)?.method === "PUT" &&
+            JSON.parse((init as FetchInit).body as string).preferred_chat_provider ===
+              "openai",
+        ),
+      ).toBe(true);
+    });
+    expect(await screen.findByRole("heading", { name: /voice is optional/i })).toBeInTheDocument();
+  });
+
+  it("configures Z.ai chat and advances to optional voice", async () => {
+    setupFetch({
+      provider: {
+        ...defaultProviderSettings,
+        openrouter: { configured: false, chat_model: null, tts_model: null, tts_voice: null },
+        zai: { configured: false, endpoint: "coding-global", chat_model: null },
+        codex: { configured: false, chat_model: null },
+      },
+    });
+
+    render(<ProviderSetupStepper />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /z\.ai api key/i }));
+    expect((screen.getByLabelText(/chat model/i) as HTMLInputElement).value).toBe("glm-5.1");
+    await userEvent.type(screen.getByLabelText(/api key/i), "zai-test");
+    await userEvent.click(screen.getByRole("button", { name: /use z\.ai/i }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            url === "/api/settings/providers/zai" &&
+            (init as FetchInit | undefined)?.method === "PUT" &&
+            JSON.parse((init as FetchInit).body as string).chat_model === "glm-5.1",
+        ),
+      ).toBe(true);
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            url === "/api/settings/providers/preferred-chat" &&
+            (init as FetchInit | undefined)?.method === "PUT" &&
+            JSON.parse((init as FetchInit).body as string).preferred_chat_provider ===
+              "zai",
+        ),
+      ).toBe(true);
+    });
+    expect(await screen.findByRole("heading", { name: /voice is optional/i })).toBeInTheDocument();
+  });
+
+  it("saves optional voice without changing the preferred chat provider", async () => {
+    setupFetch({
+      provider: {
+        ...defaultProviderSettings,
+        openrouter: { configured: false, chat_model: null, tts_model: null, tts_voice: null },
+        codex: { configured: true, chat_model: "gpt-5.5" },
+      },
+    });
+
+    render(<ProviderSetupStepper />);
+
+    expect(await screen.findByRole("heading", { name: /voice is optional/i })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/openrouter api key/i), "sk-or-voice");
+    await userEvent.click(screen.getByRole("button", { name: /set up voice/i }));
+
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            url === "/api/settings/providers/openrouter" &&
+            (init as FetchInit | undefined)?.method === "PUT" &&
+            JSON.parse((init as FetchInit).body as string).tts_model ===
+              "canopylabs/orpheus-3b-0.1-ft",
+        ),
+      ).toBe(true);
+      expect(refetchMock).toHaveBeenCalled();
+    });
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, init]) =>
+          url === "/api/settings/providers/preferred-chat" &&
+          (init as FetchInit | undefined)?.method === "PUT",
+      ),
+    ).toBe(false);
+  });
+
+  it("lets users skip optional voice before continuing to chat onboarding", async () => {
+    setupFetch({
+      provider: {
+        ...defaultProviderSettings,
+        codex: { configured: true, chat_model: "gpt-5.5" },
+      },
+    });
+
+    render(<ProviderSetupStepper />);
+
+    expect(await screen.findByRole("heading", { name: /voice is optional/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /skip voice/i }));
+    expect(refetchMock).toHaveBeenCalled();
+  });
+});
+
+
 describe("SettingsPanel — OpenRouter TTS voice", () => {
   function openRouterForm() {
     const voiceSelect = screen.getByRole("combobox", { name: /tts voice/i });
@@ -250,6 +660,13 @@ describe("SettingsPanel — OpenRouter TTS voice", () => {
         tts_model: "canopylabs/orpheus-3b-0.1-ft",
         tts_voice: "leah",
       });
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            url === "/api/settings/providers/preferred-chat" &&
+            (init as FetchInit | undefined)?.method === "PUT",
+        ),
+      ).toBe(false);
     });
   });
 

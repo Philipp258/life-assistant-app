@@ -12,6 +12,7 @@ Symlinks pointing outside are rejected.
 from __future__ import annotations
 
 import re
+import shutil
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -272,8 +273,6 @@ def rename_folder(src: str, dst: str) -> str:
 
 def delete_folder(rel: str) -> None:
     """Recursively remove a folder and everything under it."""
-    import shutil
-
     target = _resolve(rel, must_exist=True)
     if not target.is_dir():
         raise KnowledgeError(f"not a folder: {rel!r}")

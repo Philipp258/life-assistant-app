@@ -5,21 +5,23 @@ from __future__ import annotations
 import base64
 import binascii
 from datetime import datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import Select, and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.chat.models import ChatSession, Message
 from app.chat import pubsub
 from app.datetime_utils import normalize_to_naive_utc, utc_now
 from app.labels.models import Label, TaskLabel
+from app.notifications import service as notify_service
 from app.tasks.models import Assignee, IntervalUnit, Task
 from app.tasks.schemas import TaskCreate, TaskUpdate, task_to_read
 from app.tasks.task_log import (
     allocate_task_log_line,
     is_recurring_assistant_task,
 )
+from app.tasks.taxonomy import status_predicate
 
 # Shapes mirror `app.saved_task_views.schemas` so saved-view filter blobs
 # round-trip cleanly through this listing path.
@@ -111,7 +113,13 @@ def _last_msg_subq():
     )
 
 
-def _apply_common_filters(stmt, *, labels, assignee, due):
+def _apply_common_filters(
+    stmt: Select[Any],
+    *,
+    labels: list[str] | None,
+    assignee: Assignee | None,
+    due: DueWindow | None,
+) -> Select[Any]:
     """Label / assignee / due-window filters shared by the open and done
     listing paths. Status predicates stay inline in `list_tasks` (legacy
     path only)."""
@@ -173,10 +181,6 @@ def list_tasks(
     """
     stmt = _apply_common_filters(select(Task), labels=labels, assignee=assignee, due=due)
     if statuses:
-        # Imported lazily so the (tiny) taxonomy module doesn't pull
-        # SQLAlchemy onto every `from app.tasks import service` import.
-        from app.tasks.taxonomy import status_predicate
-
         stmt = stmt.where(status_predicate(list(statuses)))
 
     if done is True:
@@ -439,8 +443,6 @@ def _fire_task_assigned_push(task: Task) -> None:
     `update_task` is sync, so delegate the sync-to-async bridge to the
     notifications service and keep this hook focused on the payload.
     """
-    from app.notifications import service as notify_service
-
     notify_service.schedule_notify(
         event_type="task_assigned",
         title=task.title,
@@ -513,6 +515,7 @@ def _spawn_next_recurrence(session: Session, completed: Task, prev_do_at: dateti
     Stall/error counters are not copied — the new row defaults to 0,
     giving each cycle a clean wake-health slate.
     """
+    assert completed.interval_unit is not None and completed.interval_count is not None
     next_do_at = _next_do_at(prev_do_at, completed.interval_unit, completed.interval_count)
     new_chat = ChatSession(title=completed.title[:128])
     session.add(new_chat)
@@ -536,6 +539,28 @@ def _spawn_next_recurrence(session: Session, completed: Task, prev_do_at: dateti
     session.flush()
     new_chat.task_id = new_task.id
     return new_task
+
+
+def previous_completed_sibling(session: Session, task: Task) -> Task | None:
+    """Latest completed sibling of a recurring assistant routine.
+
+    Recurrence cycles share `task_log_line` (carried forward by
+    `_spawn_next_recurrence`), so it doubles as the identity used to walk
+    a routine's history. Excludes `task` itself. Returns None for
+    non-recurring tasks or when no prior cycle has finished.
+    """
+    if task.task_log_line is None:
+        return None
+    stmt = (
+        select(Task)
+        .where(Task.task_log_line == task.task_log_line)
+        .where(Task.id != task.id)
+        .where(Task.is_done.is_(True))
+        .where(Task.completed_at.is_not(None))
+        .order_by(Task.completed_at.desc(), Task.id.desc())
+        .limit(1)
+    )
+    return session.scalars(stmt).first()
 
 
 def delete_task(session: Session, task_id: int) -> bool:

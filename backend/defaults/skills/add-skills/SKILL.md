@@ -35,8 +35,7 @@ In rough order of curation:
 Pick a slug for the skill (`^[a-z0-9][a-z0-9-]*$` — the backend rejects
 anything else, so catch it early). Defaults (`add-skills`, `github`,
 `improve-life-assistant`, `self-update`) are immutable and their slugs are
-reserved; suggest a variant like `<name>-custom` if the user wants to override
-one. Check `data/skills/*/SKILL.md` first to avoid silently overwriting an
+reserved. Check `data/skills/*/SKILL.md` first to avoid silently overwriting an
 existing user skill.
 
 Fetch the upstream `SKILL.md` with `web_fetch`. The frontmatter must
@@ -44,22 +43,8 @@ have `name` and `description` — if it doesn't, the skill is
 malformed; refuse. Write to `data/skills/<slug>/SKILL.md`, rewriting
 the `name` field to match the folder if it differs (the backend
 expects them aligned). Pull in supporting files (`scripts/`,
-`references/`, `assets/`) only if the SKILL.md body references them;
-preserve LICENSE always. Keep the install minimal — extra files are
+`references/`, `assets/`) only if the SKILL.md body references them. Keep the install minimal — extra files are
 extra surface area.
 
 Confirm to the user with the skill's name, description, and a one-line
 summary of what it does.
-
-## Caveats
-
-- Skills appear on the **next** chat session — not in the current one.
-  Tell the user "open a new chat to use it" or restart the backend.
-- Don't rewrite an installed skill's frontmatter (`name`,
-  `description`) on a whim — it invalidates the prompt cache from that
-  point. Edit the body freely; touch frontmatter only when the user
-  explicitly asks.
-- Never install a skill that runs untrusted shell commands without
-  showing the user what it does first. The agent (you) has full shell
-  access; an installed skill effectively grants its instructions the
-  same.

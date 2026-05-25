@@ -3,11 +3,10 @@
 Source of credentials
 ---------------------
 The Codex CLI stores OAuth credentials in ``$CODEX_HOME/auth.json``
-(default ``~/.codex/auth.json``). For Life Assistant the user pastes those file
-contents into the provider settings UI; we keep the JSON blob in
-``provider_settings.codex_auth_json`` and round-trip it through
-``load_session_from_json`` / a persist callback so refresh writes the
-new tokens back to the column.
+(default ``~/.codex/auth.json``). For Life Assistant the user authenticates
+on the VPS as the service user, then imports that file into typed provider
+settings columns. Runtime refresh writes the new parsed session back via a
+persist callback.
 
 JSON shape (``auth.json``)
 --------------------------
@@ -45,7 +44,7 @@ import json
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable
 
 import httpx
 
@@ -60,7 +59,10 @@ class AuthExpiredError(Exception):
     def __init__(self, reason: str) -> None:
         super().__init__(
             f"Codex CLI session expired and could not be refreshed: {reason}. "
-            "Re-run `codex` locally and paste the new auth.json into Life Assistant."
+            "SSH to the server and run "
+            "`sudo -u life-assistant -H env HOME=/home/life-assistant "
+            "codex login --device-auth`, then open Settings and use the server "
+            "Codex login again."
         )
 
 
@@ -69,21 +71,19 @@ REFRESH_TOKEN_URL = "https://auth.openai.com/oauth/token"
 TOKEN_REFRESH_MARGIN = 60  # seconds before exp to start refreshing
 
 
-PersistCallback = Callable[[str], Awaitable[None]]
-"""Async callback invoked after refresh with the updated auth.json blob."""
-
-
 @dataclass
 class CodexSession:
     """Parsed Codex CLI session credentials."""
 
+    auth_mode: str | None
     access_token: str
     refresh_token: str
     expires_at: datetime
     account_id: str | None = None
     plan_type: str | None = None
     id_token_raw: str | None = None
-    raw: dict | None = None
+    last_refresh: datetime | None = None
+    raw: dict[str, Any] | None = None
 
     @property
     def is_expired(self) -> bool:
@@ -91,10 +91,14 @@ class CodexSession:
         return (self.expires_at - now).total_seconds() < TOKEN_REFRESH_MARGIN
 
 
+PersistCallback = Callable[[CodexSession], Awaitable[None]]
+"""Async callback invoked after refresh with the updated parsed session."""
+
+
 # ── JWT helpers (no signature verification) ───────────────────────
 
 
-def _decode_jwt_payload(jwt: str) -> dict:
+def _decode_jwt_payload(jwt: str) -> dict[str, Any]:
     parts = jwt.split(".")
     if len(parts) != 3:
         raise ValueError("Invalid JWT format")
@@ -112,6 +116,21 @@ def _parse_jwt_expiry(jwt: str) -> datetime:
     if exp is None:
         raise ValueError("JWT has no exp claim")
     return datetime.fromtimestamp(int(exp), tz=timezone.utc)
+
+
+def _parse_iso_datetime(raw: Any) -> datetime | None:
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    value = raw.strip()
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _parse_id_token_claims(jwt: str) -> tuple[str | None, str | None]:
@@ -176,13 +195,19 @@ def load_session_from_json(blob: str) -> CodexSession:
             account_id = id_account_id
         plan_type = id_plan_type
 
+    auth_mode = data.get("auth_mode")
+    if not isinstance(auth_mode, str):
+        auth_mode = None
+
     return CodexSession(
+        auth_mode=auth_mode,
         access_token=access_token,
         refresh_token=refresh_token,
         expires_at=expires_at,
         account_id=account_id,
         plan_type=plan_type,
         id_token_raw=id_token_raw,
+        last_refresh=_parse_iso_datetime(data.get("last_refresh")),
         raw=data,
     )
 
@@ -201,8 +226,10 @@ def session_to_json(session: CodexSession) -> str:
         tokens["id_token"] = session.id_token_raw
     if session.account_id:
         tokens["account_id"] = session.account_id
+    if session.auth_mode:
+        base["auth_mode"] = session.auth_mode
     base["tokens"] = tokens
-    base["last_refresh"] = datetime.now(timezone.utc).isoformat()
+    base["last_refresh"] = (session.last_refresh or datetime.now(timezone.utc)).isoformat()
     return json.dumps(base, indent=2)
 
 
@@ -212,16 +239,17 @@ def session_to_json(session: CodexSession) -> str:
 async def refresh_session(
     session: CodexSession,
     *,
+    force: bool = False,
     persist: PersistCallback | None = None,
     http_client: httpx.AsyncClient | None = None,
 ) -> CodexSession:
-    """Refresh the access token if near expiry; otherwise return as-is.
+    """Refresh the access token if near expiry, or always when forced.
 
     If ``persist`` is supplied and a refresh occurred, it is awaited
     with the new auth.json blob so the caller can write it back to its
     store of choice (DB row, file, etc.).
     """
-    if not session.is_expired:
+    if not force and not session.is_expired:
         return session
 
     payload = {
@@ -265,16 +293,18 @@ async def refresh_session(
             plan_type = id_plan_type
 
     refreshed = CodexSession(
+        auth_mode=session.auth_mode,
         access_token=new_access,
         refresh_token=new_refresh,
         expires_at=new_expires,
         account_id=account_id,
         plan_type=plan_type,
         id_token_raw=new_id_token,
+        last_refresh=datetime.now(timezone.utc),
         raw=session.raw,
     )
 
     if persist is not None:
-        await persist(session_to_json(refreshed))
+        await persist(refreshed)
 
     return refreshed

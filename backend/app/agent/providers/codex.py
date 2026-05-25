@@ -1,11 +1,11 @@
 """Codex (ChatGPT subscription) provider — Responses API via Codex CLI OAuth.
 
-The user authenticates locally with the OpenAI ``codex`` CLI, then pastes
-the resulting ``~/.codex/auth.json`` blob into the provider settings. We
-talk to ``https://chatgpt.com/backend-api/codex/responses`` with the
-``access_token`` as a bearer, and refresh through the OAuth refresh
-endpoint when the JWT is near expiry. Refreshed tokens are written back
-via a caller-supplied async callback (the DB-write path).
+The user authenticates on the VPS with the OpenAI ``codex`` CLI as the
+service user, then Life Assistant imports that session into typed provider
+settings. We talk to ``https://chatgpt.com/backend-api/codex/responses`` with
+the ``access_token`` as a bearer, and refresh through the OAuth refresh
+endpoint when the JWT is near expiry. Refreshed tokens are written back via
+a caller-supplied async callback (the DB-write path).
 
 Why OpenAIResponsesModel: the Codex endpoint speaks the OpenAI Responses
 API event grammar. Using pydantic-ai's built-in model means we get
@@ -17,23 +17,28 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncGenerator, Generator
 
 import httpx
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, Omit
+from openai.types import responses
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse
+from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.openai import OpenAIResponsesModel, OpenAIResponsesModelSettings
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.settings import ModelSettings
+from typing_extensions import override
 
 from app.agent.providers.codex_auth import (
     CodexSession,
     PersistCallback,
-    load_session_from_json,
     refresh_session,
 )
 
 log = logging.getLogger(__name__)
 
 CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
-DEFAULT_CODEX_MODEL = "gpt-5.1-codex"
+DEFAULT_CODEX_MODEL = "gpt-5.5"
 
 # Codex rejects requests with no `instructions` field ({"detail": "Instructions
 # are required"}). pydantic-ai's @agent.system_prompt routes content into the
@@ -65,15 +70,18 @@ class _CodexAuth(httpx.Auth):
                 self._session = await refresh_session(self._session, persist=self._safe_persist)
             return self._session
 
-    async def _safe_persist(self, blob: str) -> None:
+    async def _safe_persist(self, session: CodexSession) -> None:
         if self._persist is None:
             return
         try:
-            await self._persist(blob)
+            await self._persist(session)
         except Exception:  # pragma: no cover — persist failure is non-fatal
             log.exception("Codex token persist callback failed; refresh will retry next cycle.")
 
-    async def async_auth_flow(self, request: httpx.Request):
+    @override
+    async def async_auth_flow(
+        self, request: httpx.Request
+    ) -> AsyncGenerator[httpx.Request, httpx.Response]:
         session = await self._ensure_fresh()
         request.headers["Authorization"] = f"Bearer {session.access_token}"
         if session.account_id:
@@ -81,7 +89,10 @@ class _CodexAuth(httpx.Auth):
         request.headers["OpenAI-Beta"] = "responses=experimental"
         yield request
 
-    def sync_auth_flow(self, request: httpx.Request):  # pragma: no cover
+    @override
+    def sync_auth_flow(
+        self, request: httpx.Request
+    ) -> Generator[httpx.Request, httpx.Response, None]:  # pragma: no cover
         raise RuntimeError("Codex auth is async-only; openai SDK is async here.")
 
 
@@ -103,7 +114,13 @@ class _CodexResponsesModel(OpenAIResponsesModel):
        (chat router, autonomous runner, tests) sends a streamed POST.
     """
 
-    async def _map_messages(self, messages, model_settings, model_request_parameters):  # type: ignore[override]
+    @override
+    async def _map_messages(
+        self,
+        messages: list[ModelMessage],
+        model_settings: OpenAIResponsesModelSettings,
+        model_request_parameters: ModelRequestParameters,
+    ) -> tuple[str | Omit, list[responses.ResponseInputItemParam]]:
         instructions, openai_messages = await super()._map_messages(
             messages, model_settings, model_request_parameters
         )
@@ -124,7 +141,13 @@ class _CodexResponsesModel(OpenAIResponsesModel):
                 instructions = _CODEX_DEFAULT_INSTRUCTIONS
         return instructions, openai_messages
 
-    async def request(self, messages, model_settings, model_request_parameters):  # type: ignore[override]
+    @override
+    async def request(
+        self,
+        messages: list[ModelRequest | ModelResponse],
+        model_settings: ModelSettings | None,
+        model_request_parameters: ModelRequestParameters,
+    ) -> ModelResponse:
         async with self.request_stream(
             messages, model_settings, model_request_parameters
         ) as stream:
@@ -135,23 +158,19 @@ class _CodexResponsesModel(OpenAIResponsesModel):
 
 def build_codex_model(
     *,
-    auth_blob: str,
+    session: CodexSession,
     model_name: str = DEFAULT_CODEX_MODEL,
     persist: PersistCallback | None = None,
 ) -> OpenAIResponsesModel:
     """Build a pydantic-ai model wired to the Codex Responses endpoint.
 
     Args:
-        auth_blob: Raw contents of ``~/.codex/auth.json``.
-        model_name: Codex model id (e.g. ``gpt-5.1-codex``).
+        session: Stored Codex CLI session credentials.
+        model_name: Codex model id (e.g. ``gpt-5.5``).
         persist: Optional async callback that receives the updated
-            auth.json string after a token refresh, so the caller can
-            write it back to wherever it stored the original blob.
-
-    Raises:
-        AuthInvalidError: ``auth_blob`` is missing required fields.
+            session after a token refresh, so the caller can write it
+            back to typed provider settings.
     """
-    session = load_session_from_json(auth_blob)
     auth = _CodexAuth(session, persist)
     http_client = httpx.AsyncClient(auth=auth, timeout=httpx.Timeout(300, connect=15))
     # The api_key is required by the openai SDK but the httpx Auth

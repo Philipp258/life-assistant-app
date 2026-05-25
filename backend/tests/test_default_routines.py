@@ -15,13 +15,15 @@ from app.chat.runner import should_start_task
 from app.defaults.models import SeededDefault
 from app.datetime_utils import utc_now
 from app.tasks.default_routines import (
+    COLLECT_BRIEF,
     COLLECT_TITLE,
     CONSOLIDATION_BRIEF,
     CONSOLIDATION_TITLE,
     DEFAULT_ROUTINES,
+    DISK_SPACE_BRIEF,
     DISK_SPACE_TITLE,
-    REFLECTION_BRIEF,
-    REFLECTION_TITLE,
+    PROCESS_BRIEF,
+    TASK_LOG_MAINTENANCE_BRIEF,
     ensure_default_routines,
 )
 from app.tasks.models import Task
@@ -222,10 +224,38 @@ def test_disk_space_gets_inbox_label_when_present(_test_db):
 
 def test_brief_constants_are_the_final_seed_text(_test_db):
     """Guard the core routine-brief invariants that old migrations used to cover."""
-    assert REFLECTION_TITLE == "Weekly reflection"
-    assert "## Think across abstraction levels" in REFLECTION_BRIEF
-    assert "use roughly one day ago" in REFLECTION_BRIEF
-    assert "ask_user_choice" in REFLECTION_BRIEF
-    assert "reassign_task('user')" not in REFLECTION_BRIEF  # old brief's phrasing
     assert CONSOLIDATION_TITLE == "Daily consolidation"
     assert "harvest durable bits" in CONSOLIDATION_BRIEF
+    assert COLLECT_TITLE == "Collect improvement items"
+    assert "Each item becomes its own task" in COLLECT_BRIEF
+    assert "let the task triage" in COLLECT_BRIEF
+
+
+def test_briefs_do_not_hardcode_interval_windows():
+    """Briefs must talk in relative terms; the Run context block carries the cadence.
+
+    Hardcoded "once a day"/"last 24 hours"/"one week" phrasing drifts the
+    moment the user edits the routine's interval. Window definitions live
+    in the runtime-injected Run context block (see
+    `app.chat.runner.messages._run_context_block`).
+    """
+    forbidden = (
+        "once a day",
+        "once a week",
+        "last 24 hours",
+        "one day ago",
+        "one week",
+        "yesterday",
+        "tomorrow",
+        "next week",
+    )
+    for brief in (
+        CONSOLIDATION_BRIEF,
+        COLLECT_BRIEF,
+        PROCESS_BRIEF,
+        DISK_SPACE_BRIEF,
+        TASK_LOG_MAINTENANCE_BRIEF,
+    ):
+        lower = brief.lower()
+        for phrase in forbidden:
+            assert phrase not in lower, f"brief leaks {phrase!r}: {brief[:80]}…"

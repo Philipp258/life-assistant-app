@@ -40,8 +40,20 @@ class ProviderSettings(Base):
     zai_endpoint: Mapped[str | None] = mapped_column(String(255), nullable=True)
     zai_chat_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
-    # Codex (ChatGPT subscription) — full auth.json blob, refreshed in place.
-    codex_auth_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Codex (ChatGPT subscription) — imported from the server-side Codex CLI
+    # auth file and refreshed in typed columns.
+    codex_auth_mode: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    codex_access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    codex_refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    codex_id_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    codex_account_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    codex_plan_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    codex_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    codex_last_refresh: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     codex_chat_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     updated_at: Mapped[datetime] = mapped_column(

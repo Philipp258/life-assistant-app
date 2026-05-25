@@ -21,6 +21,9 @@ from pydantic_ai.messages import ModelResponse, TextPart
 from app.agent.deps import AgentDeps
 from app.chat.service import save_new_messages
 from app.db import SessionLocal
+from app.tasks import service as tasks_service
+from app.tasks.models import Task
+from app.tasks.schemas import TaskUpdate
 
 
 def do_relay_to_task(
@@ -36,9 +39,6 @@ def do_relay_to_task(
     user intent in its history on the next run.
     """
     from app.chat import runner
-    from app.tasks import service as tasks_service
-    from app.tasks.models import Task
-    from app.tasks.schemas import TaskUpdate
 
     text = (note or "").strip()
     if not text:

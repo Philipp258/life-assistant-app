@@ -137,7 +137,7 @@ def test_shared_app_context_appears_before_main_chat_role(_test_db, skills_dir: 
     prompt = _build_prompt(sid)
     assert "## App context" in prompt
     assert prompt.index("## App context") < prompt.index("## Main chat")
-    assert "Life Assistant has chats, tasks, knowledge notes, core memory, and skills" in prompt
+    assert "It has chats, tasks, knowledge notes, core memory, and skills" in prompt
     assert "Main chat is for conversation and coordination" in prompt
     assert "task chats hold focused work" in prompt
     assert "durable sources of truth" in prompt

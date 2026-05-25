@@ -30,7 +30,7 @@ import logging
 import time
 from pathlib import Path
 from collections.abc import Coroutine
-from typing import Any
+from typing import Any, TypedDict
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -64,9 +64,9 @@ def schedule(coro: Coroutine[Any, Any, None], *, label: str) -> None:
     except RuntimeError:
         pass
 
-    from app.chat import runner as chat_runner
+    from app.chat.runner.state import get_main_loop
 
-    main_loop = chat_runner._main_loop
+    main_loop = get_main_loop()
     if main_loop is None or main_loop.is_closed():
         logger.debug("notifications: no main loop, dropping %s", label)
         coro.close()
@@ -179,7 +179,15 @@ def _check_dedupe(key: str | None) -> bool:
     return False
 
 
-def _send_one(subscription: PushSubscription, payload: dict[str, Any]) -> int | None:
+class PushPayload(TypedDict):
+    title: str
+    body: str
+    url: str
+    event_type: str
+    tag: str
+
+
+def _send_one(subscription: PushSubscription, payload: PushPayload) -> int | None:
     """Send one push. Returns HTTP status on transport failure, None on success.
 
     Hidden import so `pywebpush` is only required when push is actually
@@ -190,6 +198,9 @@ def _send_one(subscription: PushSubscription, payload: dict[str, Any]) -> int | 
     private_key = _resolve_private_key_path()
     if private_key is None:
         return None
+    vapid_contact_email = settings.vapid_contact_email
+    if vapid_contact_email is None:
+        return None
     try:
         webpush(
             subscription_info={
@@ -198,12 +209,26 @@ def _send_one(subscription: PushSubscription, payload: dict[str, Any]) -> int | 
             },
             data=json.dumps(payload),
             vapid_private_key=private_key,
-            vapid_claims={"sub": settings.vapid_contact_email},
+            vapid_claims={"sub": vapid_contact_email},
         )
         return None
     except WebPushException as exc:
         status = getattr(exc.response, "status_code", None) if exc.response else None
         return status if status is not None else 0
+
+
+def _safe_url(url: str) -> str:
+    """Coerce ``url`` to a same-origin relative path.
+
+    The SW invokes ``clients.openWindow(url)`` on notification click, which
+    happily opens absolute or protocol-relative URLs. Every caller today
+    passes a server-built relative path; this is a guard rail against a
+    future caller smuggling user input into the field.
+    """
+    if url.startswith("/") and not url.startswith("//"):
+        return url
+    logger.warning("notifications: rejecting non-relative url %r, coercing to '/'", url)
+    return "/"
 
 
 async def notify(
@@ -223,6 +248,7 @@ async def notify(
     """
     if not _vapid_ready():
         return
+    url = _safe_url(url)
     if quiet_if_session_id is not None and pubsub.subscriber_count(quiet_if_session_id) > 0:
         logger.debug(
             "notifications: suppressing %s for session %d (user is watching)",
@@ -234,7 +260,7 @@ async def notify(
         logger.debug("notifications: deduped %s (key=%s)", event_type, dedupe_key)
         return
 
-    payload = {
+    payload: PushPayload = {
         "title": title,
         "body": body,
         "url": url,

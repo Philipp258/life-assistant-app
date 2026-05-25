@@ -25,9 +25,9 @@ export async function jsonOrThrow<T>(r: Response): Promise<T> {
     const body = await r.text().catch(() => "");
     throw new Error(`${r.status} ${r.statusText}: ${body}`);
   }
-  // If the server returned the SPA document (e.g. a stale client hitting a
-  // path the API no longer serves), surface a useful error instead of the
-  // opaque "Unexpected token '<'" you get from blindly calling r.json().
+  // If the server returned the SPA document (e.g. a stale client hitting
+  // an unknown API path), surface a useful error instead of the opaque
+  // "Unexpected token '<'" from blindly calling r.json().
   const contentType = r.headers.get("content-type") ?? "";
   if (!contentType.toLowerCase().includes("json")) {
     throw new Error(

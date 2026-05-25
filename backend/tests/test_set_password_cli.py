@@ -41,3 +41,24 @@ def test_set_password_rejects_empty():
 
     with pytest.raises(SystemExit):
         cli.main("")
+
+
+def test_needs_initial_password_exits_one_when_user_exists():
+    from app.users import needs_initial_password as cli
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+
+    assert exc.value.code == 1
+
+
+def test_needs_initial_password_exits_zero_when_user_missing(db_session):
+    db_session.execute(delete(User))
+    db_session.commit()
+
+    from app.users import needs_initial_password as cli
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+
+    assert exc.value.code == 0

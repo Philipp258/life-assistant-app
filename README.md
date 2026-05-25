@@ -57,25 +57,34 @@ Otherwise I suggest those measures:
 
 ## Setup
 
-Supported target: a fresh **Ubuntu 24.04 VPS** — root SSH access, public IP, port 8000 open.
+Supported target: a fresh **Ubuntu/Debian-style systemd VPS** with `apt`,
+root SSH access, public IP, and ports 80 and 443 open.
 
 1. SSH in as root.
-2. Run the installer. It clones the repo, installs dependencies, sets up the
-   systemd services, and prints a generated login password at the end — save it.
+2. Run the installer. It clones the repo, installs dependencies, derives a
+   stable `https://<your-ip-with-dashes>.sslip.io` URL, issues a Let's Encrypt
+   certificate, sets up the systemd services, and prints the URL plus a
+   generated login password at the end — save them.
 
    ```bash
    curl -fsSL https://raw.githubusercontent.com/Philipp258/life-assistant/main/deploy/install.sh \
      | LIFE_ASSISTANT_REPO_URL=https://github.com/Philipp258/life-assistant.git bash
    ```
 
-3. Restart once the install finishes:
+   If sslip.io is temporarily rate-limited by Let's Encrypt, point your own DNS
+   name at the VPS and rerun with `LIFE_ASSISTANT_DOMAIN=your.name.example`.
+
+3. Open the URL printed at the end of the installer, sign in with the printed
+   password, and finish provider setup in the UI.
+
+   For ChatGPT subscription auth, the UI shows the server command to run:
 
    ```bash
-   systemctl restart life-assistant
+   sudo -u life-assistant -H env HOME=/home/life-assistant codex login --device-auth
    ```
 
-4. Open `http://<vps-ip>:8000/`, sign in with the printed password, and
-   finish provider setup in the UI.
+   After that command succeeds on the VPS, return to the UI and import the
+   server Codex login.
 
 Supported chat providers:
 
@@ -87,6 +96,8 @@ Supported chat providers:
 OpenRouter is also used for voice transcription and can be used for voice
 replies; without it, spoken replies fall back to the browser's built-in voice.
 
-Push notifications and microphone access need HTTPS. Without a domain, use
-the Tailscale guide in [`deploy/README.md`](deploy/README.md), which also
-covers updates, backups, and the file layout.
+The default install gives you real HTTPS without buying a domain: sslip.io
+resolves `1-2-3-4.sslip.io` straight back to your VPS IP, and the cert is
+issued by Let's Encrypt directly to your machine, so traffic stays end-to-end
+between your browser and the server. If you prefer your own domain, or a
+tailnet-only deployment via Tailscale, see [`deploy/README.md`](deploy/README.md).

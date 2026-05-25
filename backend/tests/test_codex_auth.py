@@ -175,6 +175,7 @@ def test_session_to_json_round_trip_preserves_extras() -> None:
 
 def test_is_expired_within_margin() -> None:
     session = CodexSession(
+        auth_mode="chatgpt",
         access_token="t",
         refresh_token="r",
         expires_at=datetime.fromtimestamp(time.time() + 30, tz=timezone.utc),
@@ -184,6 +185,7 @@ def test_is_expired_within_margin() -> None:
 
 def test_is_expired_outside_margin() -> None:
     session = CodexSession(
+        auth_mode="chatgpt",
         access_token="t",
         refresh_token="r",
         expires_at=datetime.fromtimestamp(time.time() + 600, tz=timezone.utc),
@@ -203,14 +205,38 @@ def test_refresh_session_noop_when_fresh() -> None:
     assert asyncio.run(go()) is session
 
 
+def test_refresh_session_force_refreshes_fresh_token() -> None:
+    session = load_session_from_json(_auth_blob())
+    new_access = _access_token(exp=int(time.time()) + 7200)
+
+    mock_resp = AsyncMock()
+    mock_resp.raise_for_status = lambda: None
+    mock_resp.json = lambda: {
+        "access_token": new_access,
+        "refresh_token": "rotated-refresh",
+        "id_token": None,
+    }
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(return_value=mock_resp)
+
+    async def go() -> CodexSession:
+        return await refresh_session(session, force=True, http_client=mock_client)
+
+    refreshed = asyncio.run(go())
+    mock_client.post.assert_awaited_once()
+    assert refreshed is not session
+    assert refreshed.access_token == new_access
+    assert refreshed.refresh_token == "rotated-refresh"
+
+
 def test_refresh_session_calls_persist_with_new_blob() -> None:
     session = load_session_from_json(_auth_blob(expired=True))
     new_access = _access_token(exp=int(time.time()) + 7200)
 
-    persisted: list[str] = []
+    persisted: list[CodexSession] = []
 
-    async def persist(blob: str) -> None:
-        persisted.append(blob)
+    async def persist(refreshed: CodexSession) -> None:
+        persisted.append(refreshed)
 
     mock_resp = AsyncMock()
     mock_resp.raise_for_status = lambda: None
@@ -237,7 +263,7 @@ def test_refresh_session_calls_persist_with_new_blob() -> None:
     assert refreshed.refresh_token == "rotated-refresh"
     assert not refreshed.is_expired
     assert len(persisted) == 1
-    assert json.loads(persisted[0])["tokens"]["refresh_token"] == "rotated-refresh"
+    assert persisted[0].refresh_token == "rotated-refresh"
 
 
 def test_refresh_session_http_error_raises_auth_expired() -> None:

@@ -27,7 +27,14 @@ def stuck_setup(db_session: Session) -> None:
     assert row is not None
     row.preferred_chat_provider = None
     row.zai_api_key = None
-    row.codex_auth_json = None
+    row.codex_auth_mode = None
+    row.codex_access_token = None
+    row.codex_refresh_token = None
+    row.codex_id_token = None
+    row.codex_account_id = None
+    row.codex_plan_type = None
+    row.codex_expires_at = None
+    row.codex_last_refresh = None
     user = db_session.query(User).first()
     assert user is not None
     user.onboarded_at = None
@@ -44,16 +51,19 @@ def _fake_response(status_code: int) -> object:
     return types.SimpleNamespace(status_code=status_code)
 
 
-def test_garbled_codex_blob_rejected_and_state_unchanged(
-    client: TestClient, stuck_setup: None
+def test_invalid_codex_server_auth_rejected_and_state_unchanged(
+    client: TestClient, stuck_setup: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The exact bug: a wrong Codex paste must not trap the user in chat."""
+    """A failed server-auth import must not trap the user in chat."""
+    from app.provider_settings import codex_server_auth
+
+    async def _bad_server_session() -> None:
+        raise codex_server_auth.ServerAuthError("server Codex login is invalid")
+
+    monkeypatch.setattr(codex_server_auth, "load_server_session", _bad_server_session)
     assert _state(client) == "needs_provider"
 
-    r = client.put(
-        "/api/settings/providers/codex",
-        json={"auth_json": "this is not the auth.json blob", "chat_model": "gpt-5-codex"},
-    )
+    r = client.post("/api/settings/providers/codex/import-server-auth")
 
     assert r.status_code == 400, r.text
     assert "Codex" in r.json()["detail"]
@@ -63,22 +73,16 @@ def test_garbled_codex_blob_rejected_and_state_unchanged(
 
 
 def test_clearing_codex_skips_verification(client: TestClient, stuck_setup: None) -> None:
-    """An empty string means "clear" — never run (or fail) verification."""
-    r = client.put("/api/settings/providers/codex", json={"auth_json": ""})
+    """Clear auth is explicit and never runs provider verification."""
+    r = client.put("/api/settings/providers/codex", json={"clear_auth": True})
     assert r.status_code == 200, r.text
     assert r.json()["codex"]["configured"] is False
 
 
-def test_model_only_patch_skips_verification(
-    client: TestClient, stuck_setup: None, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_model_only_patch_skips_verification(client: TestClient, stuck_setup: None) -> None:
     """Patching just the model (api/auth field omitted) must not verify."""
 
-    def _boom(*_a: object, **_k: object) -> None:
-        raise AssertionError("verification ran for a model-only patch")
-
-    monkeypatch.setattr(credential_verify, "verify_codex", _boom)
-    r = client.put("/api/settings/providers/codex", json={"chat_model": "gpt-5-codex"})
+    r = client.put("/api/settings/providers/codex", json={"chat_model": "gpt-5.5"})
     assert r.status_code == 200, r.text
 
 

@@ -161,7 +161,6 @@ def test_task_summary_tool_uses_z_suffix():
     """Agent-facing dict summaries must mark every datetime as UTC so the
     model doesn't interpret a naive string as 'local to wherever I am'."""
     from app.agent.tools.tasks import _summarize
-    from app.tasks.schemas import task_to_read
 
     class FakeTask:
         id = 1
@@ -181,7 +180,7 @@ def test_task_summary_tool_uses_z_suffix():
         completed_at = None
 
     summary = _summarize(
-        task_to_read(FakeTask()),
+        FakeTask(),  # type: ignore[arg-type]
         last_activity_at=datetime(2026, 5, 7, 20, 30, 0),
     )
     assert summary["do_at"] == "2026-05-07T21:25:00Z"

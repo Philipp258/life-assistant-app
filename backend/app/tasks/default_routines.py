@@ -1,24 +1,16 @@
-"""Default assistant routines, seeded at boot instead of via migrations.
+"""Default assistant routines, seeded at boot.
 
-These recurring assistant tasks used to be inserted by separate
-seed migrations (`a8c2f1e94b03` + `d1b6e8f04a52` reflection,
-`f3b71d6082a4` consolidation, `d8a4b9e017c5` improve-life-assistant
-collect / process, `b7e2d9f6a4c1` disk-space). Burying routine *content* in
-migrations meant every brief tweak was a new migration. The squash
-(`0001_baseline`) drops them; this module is the single, diffable home
-for the briefs, and `ensure_default_routines` is called from the
-FastAPI lifespan next to `ensure_user` / `get_or_create_main_session`.
+`ensure_default_routines` runs from the FastAPI lifespan (next to
+`ensure_user` / `get_or_create_main_session`) and materializes the
+recurring assistant tasks defined in this module.
 
 Idempotent by stable default key: once a routine key is materialized,
-`seeded_defaults` records it permanently. The routine's title and brief are
+`seeded_defaults` records it permanently. Title and brief become
 user-owned after creation; boot seeding never mutates or resurrects it.
 
-Scheduling note: the old reflection seed set `due_at` and left `do_at`
-NULL. `runner.should_start_task` treats `do_at IS NULL` as
-*eligible now*, so reproducing that on a fresh install would wake the
-routine immediately at first boot. All routines are seeded with a
-future `do_at` instead — the correct field for an assistant routine and
-consistent with the other four.
+Every routine is seeded with a future `do_at` (not just `due_at`):
+`runner.should_start_task` treats `do_at IS NULL` as eligible-now,
+which would wake the routine immediately at first boot.
 """
 
 from __future__ import annotations
@@ -37,7 +29,6 @@ from app.tasks.models import IntervalUnit, Task
 from app.tasks.schemas import TaskCreate
 from app.tasks.service import create_task
 
-REFLECTION_TITLE = "Weekly reflection"
 CONSOLIDATION_TITLE = "Daily consolidation"
 COLLECT_TITLE = "Collect improvement items"
 PROCESS_TITLE = "Process improvement items"
@@ -45,105 +36,32 @@ DISK_SPACE_TITLE = "Weekly disk space check"
 TASK_LOG_MAINTENANCE_TITLE = "Task log maintenance"
 
 
-REFLECTION_BRIEF = """\
-You wake once a week to review recent activity and propose core-memory \
-updates worth saving.
-
-## Look back in detail
-
-Find the previous completed Weekly reflection and use its `completed_at` \
-as the start of the window; if none exists, use roughly one day ago. \
-Review main-chat and task activity since then. Read the actual conversation \
-for the few most relevant tasks before inferring anything from a title.
-
-## Think across abstraction levels
-
-Core memory (`about_user.md` and `behavior.md`, already loaded into your \
-system prompt above) can hold several levels of learning:
-
-- Hard rules — "never X".
-- Gentler preferences — "lean toward Y when there's a choice".
-- Role / attribute facts about the user — "background: data scientist", \
-"lives in Berlin".
-- Meta-patterns — "phrases requests as questions when uncertain", \
-"prefers fewer options to more".
-
-When you spot something, don't lock onto the most specific framing. One \
-observation often supports more than one framing. A rejected nut-heavy \
-recipe might mean "no nuts", "lean toward lighter food", or "I'm suggesting \
-too narrow a range". Pick the framing that generalises without overfitting.
-
-## Propose updates via choice
-
-For each candidate update, call `ask_user_choice` with 2–4 phrasings at \
-different abstraction levels plus "skip". Leave `allow_free_text=True` so \
-the user can word it themselves.
-
-The user's pick comes back as their next message (the tool reassigns to \
-the user automatically). Then:
-
-- Draft the *full new content* of the file you'd write to (preserving \
-everything you want to keep).
-- Show it in the chat.
-- Call `ask_user_choice("Save this version?", ["Save", "Edit it", \
-"Don't save"])` to confirm.
-- On "Save", call `save_core_memory(name, body)`. On "Edit it", revise \
-per their notes and confirm again. On anything else, drop it.
-
-Move on to the next observation.
-
-## Done
-
-Once every observation is resolved — or you found nothing worth raising \
-— call `complete_task`. The task auto-respawns for next week.
-
-Tone: terse, observational, not eager. You're surfacing what you noticed \
-and asking if it's worth remembering. Empty reflections are fine — \
-saying nothing is better than padding."""
-
-
 CONSOLIDATION_BRIEF = """\
-You wake up once a day to harvest durable bits from yesterday's main \
-chat and finished tasks into the knowledge store. The main chat is \
-ephemeral for you — anything worth keeping has to land in \
-`data/knowledge/` or it's gone from your view.
+You wake to harvest durable bits from recent main-chat activity and \
+finished tasks into the knowledge store. The main chat is ephemeral for \
+you — anything worth keeping has to land in knowledge or it's \
+gone from your view.
 
 ## What to look at
 
-Find yesterday's main-chat messages and tasks completed in the same window. \
-The main chat is the session whose `task_id` is null; in practice it is the \
-lowest-id session unless an old install is unusual.
-
-## What to keep
-
-Keep durable signal: facts, preferences, learnings, and follow-ups the user \
-mentioned. Skip greetings, one-off chitchat, and anything already captured. \
-Prefer fewer, denser notes over many small ones; duplicate-note pollution is \
-the main risk on a daily cadence.
-
-Merge into an existing related knowledge note when one fits; otherwise \
-create a note under a sensible folder. Skip items that don't add anything \
-to what's already stored.
-
-Call `complete_task` when done. The task auto-respawns for tomorrow.
-
-Tone: terse, observational, low-friction. Saying "nothing notable \
-today" and completing the task is a fine outcome on quiet days. Do \
-not narrate the process — the chat record is for your own continuity \
-across runs, not a report."""
+Window starts at the previous completion timestamp in the Run context \
+block; on the first cycle, look back one cadence. Find main-chat \
+messages and tasks completed in that window. 
+Create knowledge for things that seem worth preserving.
+"""
 
 
 COLLECT_BRIEF = """\
-You wake up once a day to scan recent activity for concrete moments \
-that should have been captured as improvement items but weren't. \
-Improvement items are evidence — discrete moments where the assistant did \
-something wrong, inefficient, confusing, or otherwise worth learning \
-from.
+You wake to scan recent activity for concrete moments that should have \
+been captured as improvement items but weren't. Improvement items are \
+evidence — discrete moments where the assistant did something wrong, \
+inefficient, confusing, or otherwise worth learning from.
 
 ## Scope
 
-Use roughly the last 24 hours. Review main-chat and task activity in that \
-window, reading task chats when their conversation looks relevant.
+Window starts at the previous completion timestamp in the Run context \
+block; on the first cycle, look back one cadence. Review main-chat and \
+task activity in that window.
 
 ## What counts
 
@@ -157,8 +75,14 @@ For each genuine opportunity, create an improvement item whose description \
 stands alone: what happened, what was off, and why it matters. Avoid \
 speculative or vague "could be nicer" items.
 
-Quiet day = zero items. Saying nothing is better than padding. \
-Call `complete_task` when done; the task auto-respawns for tomorrow.
+Each item becomes its own task that classifies the evidence and proposes a \
+change in the relevant surface (behavior, user fact, skill, or knowledge) \
+— or closes silently if it's an app bug, infrastructural, or doesn't \
+cleanly fit. Don't pre-classify here; file the moment and let the task \
+triage.
+
+Quiet cycle = zero items. Saying nothing is better than padding. \
+Call `complete_task` when done; the task auto-respawns for the next cycle.
 
 Tone: terse, observational, evidence-driven. You are not pitching \
 fixes here — that's the Process improvement items routine's job. You \
@@ -166,8 +90,8 @@ are only collecting evidence."""
 
 
 PROCESS_BRIEF = """\
-You wake up once a day to turn unresolved improvement items into \
-concrete suggestions the user can review and apply.
+You wake to turn unresolved improvement items into concrete suggestions \
+the user can review and apply.
 
 Read and follow the `improve-life-assistant` skill. It gives the context for \
 turning evidence into the right kind of durable change: core memory, \
@@ -177,28 +101,19 @@ Hard rule: do NOT apply suggestions from this routine. Do not call \
 `mark_improvement_suggestion_applied`. The Apply step is gated to \
 explicit user action via the Improve the assistant panel.
 
-Quiet day = zero new/updated suggestions. Call `complete_task` when \
-done; the task auto-respawns for tomorrow."""
+Quiet cycle = zero new/updated suggestions. Call `complete_task` when \
+done; the task auto-respawns for the next cycle."""
 
 
 DISK_SPACE_BRIEF = """\
-You wake once a week to keep an eye on disk space on the host machine \
-this assistant runs on. The goal is early warning: catch filesystems, \
-inodes, or directories trending toward full before they affect the app \
-or host, so the user has time to react.
-
-Inspect usage read-only — never delete, truncate, rotate, compact, or \
-otherwise clean up files unless the user has explicitly approved the \
-specific cleanup first. Prefer light checks over aggressive scans.
-
-Surface only what matters. If everything looks healthy, say so briefly \
-and stop. If something is concerning, name the filesystem or path, the \
-current usage, why it matters, and a sensible next step the user can \
-weigh in on."""
+Please check disk space usage of the machine you are running on via the bash tool.
+Clean up things where you are 100% certain they are fine to clean. Otherwise raise potential issues
+in the completion message.
+"""
 
 
 TASK_LOG_MAINTENANCE_BRIEF = """\
-You wake once a week to keep the durable routine logs under \
+You wake to keep the durable routine logs under \
 `data/knowledge/Task Log/` from growing unbounded. Each recurring \
 assistant routine reads its own log before acting and appends concrete \
 experience after a cycle. The point is to preserve enough history for \
@@ -243,8 +158,8 @@ transfer can be useful, but only as judgment/context for the agent reading \
 a relevant log; don't mechanically port patterns from one domain to \
 another.
 
-Quiet week = no eligible logs = call `complete_task` with a short \
-"nothing to compress" handoff. The routine respawns weekly."""
+Quiet cycle = no eligible logs = call `complete_task` with a short \
+"nothing to compress" handoff. The routine respawns on the next cycle."""
 
 
 def _next_weekday_at(now: datetime, weekday: int, hour: int, minute: int = 0) -> datetime:
@@ -274,18 +189,10 @@ class RoutineSpec:
     labels: tuple[str, ...] = field(default_factory=tuple)
 
 
-# Cadence/time mirrors the old seed migrations: reflection Sun 09:00,
-# consolidation 03:00, collect 04:00, process 05:00 (staggered so they
-# don't fight for the runner), disk-space Mon 10:00. All UTC.
+# Cadence/time mirrors the old seed migrations: consolidation 03:00,
+# collect 04:00, process 05:00 (staggered so they don't fight for the
+# runner), disk-space Mon 10:00. All UTC.
 DEFAULT_ROUTINES: tuple[RoutineSpec, ...] = (
-    RoutineSpec(
-        key="weekly-reflection",
-        title=REFLECTION_TITLE,
-        description=REFLECTION_BRIEF,
-        interval_unit="week",
-        interval_count=1,
-        schedule=lambda now: _next_weekday_at(now, weekday=6, hour=9),
-    ),
     RoutineSpec(
         key="daily-consolidation",
         title=CONSOLIDATION_TITLE,
@@ -335,7 +242,6 @@ DEFAULT_ROUTINES: tuple[RoutineSpec, ...] = (
 
 
 LEGACY_TITLE_MATCHES: dict[str, tuple[str, ...]] = {
-    "weekly-reflection": (REFLECTION_TITLE,),
     "daily-consolidation": (CONSOLIDATION_TITLE,),
     # The production routine drifted to "opportunities" before this ledger
     # existed. Treat that as the same shipped default instead of seeding the

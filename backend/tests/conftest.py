@@ -84,6 +84,16 @@ def _reset_runner_state():
 
 
 @pytest.fixture(autouse=True)
+def _reset_login_rate_limit():
+    """Login rate limit holds process-global per-IP counters."""
+    from app.auth import rate_limit
+
+    rate_limit._reset_for_tests()
+    yield
+    rate_limit._reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _allow_model_requests():
     """Reset pydantic-ai's ALLOW_MODEL_REQUESTS before each test.
 
@@ -240,6 +250,11 @@ def _test_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 preferred_chat_provider="zai",
             )
         )
+        # Mirror the post-onboarding invariant in production: both
+        # identity names exist before any general-prompt rendering.
+        # Onboarding-specific tests can clear these rows explicitly.
+        db.add(_settings_models.AppSetting(key="assistant_name", value="Atlas"))
+        db.add(_settings_models.AppSetting(key="user_name", value="Phil"))
         db.commit()
 
     monkeypatch.setattr(db_module, "engine", test_engine, raising=True)
@@ -252,6 +267,7 @@ def _test_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from app import main as main_mod
 
     monkeypatch.setattr(main_mod, "seed_repo_defaults", lambda db: None, raising=True)
+    monkeypatch.setattr(main_mod, "SessionLocal", TestSession, raising=True)
 
     # Re-bind already-imported `SessionLocal` references.
     from app.tasks import router as tasks_router_mod
@@ -318,6 +334,30 @@ def _test_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from app.users import set_password as set_password_mod
 
     monkeypatch.setattr(set_password_mod, "SessionLocal", TestSession, raising=True)
+
+    from app.users import service as users_service_mod
+
+    monkeypatch.setattr(users_service_mod, "SessionLocal", TestSession, raising=True)
+
+    from app.provider_settings import service as provider_service_mod
+
+    monkeypatch.setattr(provider_service_mod, "SessionLocal", TestSession, raising=True)
+
+    from app.voice import service as voice_service_mod
+
+    monkeypatch.setattr(voice_service_mod, "SessionLocal", TestSession, raising=True)
+
+    from app.knowledge import identity as identity_mod
+
+    monkeypatch.setattr(identity_mod, "SessionLocal", TestSession, raising=True)
+
+    from app import agent as agent_mod
+
+    monkeypatch.setattr(agent_mod, "SessionLocal", TestSession, raising=True)
+
+    from app.agent.tools import onboarding as onboarding_tools_mod
+
+    monkeypatch.setattr(onboarding_tools_mod, "SessionLocal", TestSession, raising=True)
 
     from app.auth import router as auth_router_mod
 
