@@ -19,4 +19,7 @@ install -d -o life-assistant -g life-assistant -m 750 "$TLS_DIR"
 install -o life-assistant -g life-assistant -m 640 "$LINEAGE/fullchain.pem" "$TLS_DIR/cert.pem"
 install -o life-assistant -g life-assistant -m 640 "$LINEAGE/privkey.pem"   "$TLS_DIR/key.pem"
 
-systemctl try-restart life-assistant.service || true
+if systemctl is-enabled --quiet life-assistant.service 2>/dev/null \
+  || systemctl is-active --quiet life-assistant.service 2>/dev/null; then
+  systemctl try-restart life-assistant.service || true
+fi
