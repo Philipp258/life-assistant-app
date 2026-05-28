@@ -224,6 +224,14 @@ def test_refresh_session_force_refreshes_fresh_token() -> None:
 
     refreshed = asyncio.run(go())
     mock_client.post.assert_awaited_once()
+    _, kwargs = mock_client.post.await_args
+    assert kwargs["data"] == {
+        "client_id": "app_EMoamEEZ73f0CkXaXp7hrann",
+        "grant_type": "refresh_token",
+        "refresh_token": "refresh-tok-xyz",
+    }
+    assert kwargs["headers"] == {"Content-Type": "application/x-www-form-urlencoded"}
+    assert "json" not in kwargs
     assert refreshed is not session
     assert refreshed.access_token == new_access
     assert refreshed.refresh_token == "rotated-refresh"
