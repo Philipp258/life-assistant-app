@@ -200,12 +200,38 @@ export const IconAgent = withSize(
   22,
   22,
   "0 0 24 24",
-  <path
-    d="M12 3l1.9 5.2L19 10l-5.1 1.8L12 17l-1.9-5.2L5 10l5.1-1.8L12 3z"
-    stroke="currentColor"
-    strokeWidth={STROKE_DEFAULT}
-    strokeLinejoin="round"
-  />,
+  <>
+    <path
+      d="M12 3v3"
+      stroke="currentColor"
+      strokeWidth={STROKE_DEFAULT}
+      strokeLinecap="round"
+    />
+    <circle cx="12" cy="2.5" r="1" fill="currentColor" />
+    <rect
+      x="4.5"
+      y="7"
+      width="15"
+      height="13"
+      rx="3.5"
+      stroke="currentColor"
+      strokeWidth={STROKE_DEFAULT}
+    />
+    <path
+      d="M4.5 12H3M21 12h-1.5"
+      stroke="currentColor"
+      strokeWidth={STROKE_THIN}
+      strokeLinecap="round"
+    />
+    <circle cx="9" cy="13" r="1.35" fill="currentColor" />
+    <circle cx="15" cy="13" r="1.35" fill="currentColor" />
+    <path
+      d="M9.5 17h5"
+      stroke="currentColor"
+      strokeWidth={STROKE_THIN}
+      strokeLinecap="round"
+    />
+  </>,
 );
 
 export const IconSend = withSize(
