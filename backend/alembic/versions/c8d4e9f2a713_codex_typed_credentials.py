@@ -135,9 +135,7 @@ def upgrade() -> None:
     op.add_column("provider_settings", sa.Column("codex_last_refresh", sa.DateTime(timezone=True)))
 
     conn = op.get_bind()
-    rows = conn.execute(
-        sa.text("SELECT id, codex_auth_json FROM provider_settings")
-    ).fetchall()
+    rows = conn.execute(sa.text("SELECT id, codex_auth_json FROM provider_settings")).fetchall()
     for row in rows:
         fields = _extract_codex_fields(row.codex_auth_json)
         if fields is None:

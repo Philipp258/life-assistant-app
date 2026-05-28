@@ -27,8 +27,9 @@ JSON shape (``auth.json``)
 Refresh flow
 ------------
 When the access_token is within ``TOKEN_REFRESH_MARGIN`` seconds of its
-``exp`` claim, POST ``{client_id, grant_type=refresh_token, refresh_token}``
-to ``https://auth.openai.com/oauth/token`` and write the new tokens back.
+``exp`` claim, POST a form-encoded
+``{client_id, grant_type=refresh_token, refresh_token}`` payload to
+``https://auth.openai.com/oauth/token`` and write the new tokens back.
 
 API endpoint
 ------------
@@ -257,10 +258,10 @@ async def refresh_session(
         "grant_type": "refresh_token",
         "refresh_token": session.refresh_token,
     }
-    headers = {"Content-Type": "application/json"}
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
     async def _post(client: httpx.AsyncClient) -> httpx.Response:
-        return await client.post(REFRESH_TOKEN_URL, json=payload, headers=headers, timeout=15)
+        return await client.post(REFRESH_TOKEN_URL, data=payload, headers=headers, timeout=15)
 
     try:
         if http_client is None:

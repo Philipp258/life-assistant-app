@@ -43,7 +43,7 @@ def test_set_password_rejects_empty():
         cli.main("")
 
 
-def test_needs_initial_password_exits_one_when_user_exists():
+def test_needs_initial_password_exits_one_when_user_exists(db_session):
     from app.users import needs_initial_password as cli
 
     with pytest.raises(SystemExit) as exc:

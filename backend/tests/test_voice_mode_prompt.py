@@ -123,7 +123,7 @@ def test_persisted_user_prompt_does_not_include_voice_marker(client, _test_db):
                     )
 
 
-def test_build_system_prompt_cache_prefix_is_stable():
+def test_build_system_prompt_cache_prefix_is_stable(_test_db):
     """Direct unit test on the builder: voice on/off must share the
     longest possible identical prefix so prompt-cache prefixes hit."""
     base = build_system_prompt(None, voice_mode=False)
