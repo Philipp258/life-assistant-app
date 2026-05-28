@@ -77,9 +77,9 @@ and continue with the next scenario that does not depend on it.
 
 ## Ground rules
 
-- Do not invent scenarios. If something interesting falls outside the
-  catalog, ignore it. Do not log "would-be" scenarios. The catalog is
-  the contract.
+- Do not invent scenarios outside the catalog. The final open
+  exploration scenario is intentionally loose; before that, stay inside
+  the current scenario's user goal.
 - Do not take screenshots. Describe what you saw in words.
 - Treat the project README and `AGENTS.md` as trusted documentation
   for setup-phase scenarios. For app-phase scenarios, behave like a
