@@ -1,11 +1,11 @@
 """Codex (ChatGPT subscription) provider — Responses API via Codex CLI OAuth.
 
-The user authenticates on the VPS with the OpenAI ``codex`` CLI as the
-service user, then Life Assistant imports that session into typed provider
-settings. We talk to ``https://chatgpt.com/backend-api/codex/responses`` with
-the ``access_token`` as a bearer, and refresh through the OAuth refresh
-endpoint when the JWT is near expiry. Refreshed tokens are written back via
-a caller-supplied async callback (the DB-write path).
+The user authenticates on the VPS with the OpenAI ``codex`` CLI as root, then
+Life Assistant imports that session into typed provider settings. We talk to
+``https://chatgpt.com/backend-api/codex/responses`` with the ``access_token``
+as a bearer, and refresh through the OAuth refresh endpoint when the JWT is
+near expiry. Refreshed tokens are written back via a caller-supplied async
+callback (the DB-write path).
 
 Why OpenAIResponsesModel: the Codex endpoint speaks the OpenAI Responses
 API event grammar. Using pydantic-ai's built-in model means we get

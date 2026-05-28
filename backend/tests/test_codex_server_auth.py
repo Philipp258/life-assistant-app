@@ -106,6 +106,8 @@ def test_server_auth_status_valid_file(db_session: Session, server_auth_env) -> 
     assert status.expires_at is not None
     assert status.error is None
     assert "codex login --device-auth" in status.login_command
+    assert status.login_command.startswith("env HOME=/root ")
+    assert "sudo -u life-assistant" not in status.login_command
 
 
 def test_server_auth_status_refreshes_expired_file(
@@ -193,3 +195,11 @@ def test_server_auth_status_reports_refresh_failure(
 
     assert status.importable is False
     assert "codex login --device-auth" in (status.error or "")
+
+
+def test_default_server_auth_commands_use_root(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+
+    assert codex_server_auth.auth_file_path().as_posix() == "/root/.codex/auth.json"
+    assert codex_server_auth.login_command() == "env HOME=/root codex login --device-auth"
+    assert codex_server_auth.status_command() == "env HOME=/root codex login status"

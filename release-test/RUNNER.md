@@ -28,11 +28,10 @@ locally and you carry them in.
   and use it whenever the app prompts you to sign in.
 - **Chat provider auth.** Read `release-test/.secrets/codex-auth.json`
   and seed it onto the VPS as
-  `/home/life-assistant/.codex/auth.json`, owned by `life-assistant`
-  with mode `600`. This simulates a completed server-side
-  `codex login --device-auth`. Then configure the Codex (ChatGPT
-  subscription) provider from the app UI by using the server login
-  import flow.
+  `/root/.codex/auth.json`, owned by `root` with mode `600`. This
+  simulates a completed server-side `codex login --device-auth`. Then
+  configure the Codex (ChatGPT subscription) provider from the app UI by
+  using the server login import flow.
 - **Brave Search API key.** Read
   `release-test/.secrets/keys.env` (simple `KEY=value` lines) and set
   the Brave Search key in the app wherever provider/integration

@@ -20,8 +20,7 @@ from app.agent.providers.codex_auth import (
 from app.provider_settings import service
 from app.provider_settings.models import ProviderSettings
 
-SERVICE_USER = "life-assistant"
-SERVICE_HOME = Path("/home/life-assistant")
+SERVICE_HOME = Path("/root")
 DEFAULT_CODEX_HOME = SERVICE_HOME / ".codex"
 
 
@@ -53,14 +52,7 @@ def auth_file_path() -> Path:
 
 
 def _command_prefix() -> str:
-    parts = [
-        "sudo",
-        "-u",
-        SERVICE_USER,
-        "-H",
-        "env",
-        f"HOME={SERVICE_HOME}",
-    ]
+    parts = ["env", f"HOME={SERVICE_HOME}"]
     configured_home = os.environ.get("CODEX_HOME")
     if configured_home:
         parts.append(f"CODEX_HOME={configured_home}")
@@ -94,8 +86,8 @@ async def load_server_session(*, force_refresh: bool = True) -> CodexSession:
     path = auth_file_path()
     if not path.exists():
         raise ServerAuthError(
-            "No server Codex login was found. SSH to the server, run the login "
-            "command shown in Settings, then check again."
+            "No server Codex login was found. SSH to the server as root, run "
+            "the login command shown in Settings, then check again."
         )
 
     try:
@@ -143,8 +135,8 @@ async def server_auth_status(row: ProviderSettings) -> ServerAuthStatus:
         )
     else:
         error = (
-            "No server Codex login was found. SSH to the server, run the login "
-            "command, then check again."
+            "No server Codex login was found. SSH to the server as root, run "
+            "the login command, then check again."
         )
 
     return ServerAuthStatus(

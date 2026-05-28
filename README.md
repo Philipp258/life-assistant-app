@@ -67,8 +67,8 @@ root SSH access, public IP, and ports 80 and 443 open.
    generated login password at the end — save them.
 
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/Philipp258/life-assistant/main/deploy/install.sh \
-     | LIFE_ASSISTANT_REPO_URL=https://github.com/Philipp258/life-assistant.git bash
+   curl -fsSL https://raw.githubusercontent.com/Philipp258/life-assistant-app/main/deploy/install.sh \
+     | LIFE_ASSISTANT_REPO_URL=https://github.com/Philipp258/life-assistant-app.git bash
    ```
 
    If sslip.io is temporarily rate-limited by Let's Encrypt, point your own DNS
@@ -80,7 +80,7 @@ root SSH access, public IP, and ports 80 and 443 open.
    For ChatGPT subscription auth, the UI shows the server command to run:
 
    ```bash
-   sudo -u life-assistant -H env HOME=/home/life-assistant codex login --device-auth
+   env HOME=/root codex login --device-auth
    ```
 
    After that command succeeds on the VPS, return to the UI and import the

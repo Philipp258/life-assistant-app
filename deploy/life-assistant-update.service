@@ -4,7 +4,5 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-User=life-assistant
-Group=life-assistant
 WorkingDirectory=/opt/life-assistant
 ExecStart=/opt/life-assistant/deploy/update.sh

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Life Assistant self-update. Runs as the `life-assistant` user via life-assistant-update.service.
+# Life Assistant self-update. Runs as root via life-assistant-update.service.
 # Pulls the configured branch (default main), installs deps, runs migrations,
-# builds frontend, restarts the legacy life-assistant service.
+# builds frontend, restarts the life-assistant service.
 set -euo pipefail
 
 # Tell pnpm we're non-interactive so it won't bail on "Aborted removal of
@@ -10,14 +10,14 @@ export CI=true
 
 REPO=/opt/life-assistant
 PROJECT_VENV=$REPO/backend/.venv     # uv-managed project deps
-UV_BIN=${LIFE_ASSISTANT_UV_BIN:-/home/life-assistant/.local/bin/uv}
+UV_BIN=${LIFE_ASSISTANT_UV_BIN:-/root/.local/bin/uv}
 
 if [ ! -x "$UV_BIN" ]; then
   echo "uv not found at $UV_BIN; rerun deploy/install.sh to install standalone uv" >&2
   exit 1
 fi
 
-export HOME=/home/life-assistant
+export HOME=/root
 
 REF=main
 if [ -r /etc/life-assistant/deploy.env ]; then
@@ -50,5 +50,5 @@ pnpm install --frozen-lockfile
 export LIFE_ASSISTANT_BUILD_ID="$REMOTE"
 pnpm build
 
-sudo /usr/bin/systemctl restart life-assistant.service
+/usr/bin/systemctl restart life-assistant.service
 echo "deployed $REMOTE"

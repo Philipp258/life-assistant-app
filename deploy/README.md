@@ -89,7 +89,7 @@ Tailscale Serve — see [`/docs/https-no-domain.md`](../frontend/public/docs/htt
 
 Tell the assistant in chat: "deploy latest" (or anything that triggers the
 `self-update` skill). The agent reads the skill and runs
-`sudo systemctl start life-assistant-update.service` via `bash` in a task chat.
+`systemctl start life-assistant-update.service` via `bash` in a task chat.
 The oneshot service runs `deploy/update.sh`: git pull, uv sync, alembic
 upgrade, frontend build, then `systemctl restart life-assistant`. Restart
 drops the listen socket for ~2s; the autonomous-task watchdog re-wakes any
@@ -98,7 +98,7 @@ in-flight tasks on the new process.
 ## Manual update
 
 ```bash
-sudo -u life-assistant /opt/life-assistant/deploy/update.sh
+/opt/life-assistant/deploy/update.sh
 ```
 
 ## Migration squash — one-time stamp
@@ -118,13 +118,12 @@ version marker, it does not touch the schema or data:
 sudo systemctl start life-assistant-backup.service
 
 # 2. Point the version marker at the baseline (--purge clears the stale row).
-sudo -u life-assistant bash -c \
-  'cd /opt/life-assistant/backend && /opt/life-assistant/backend/.venv/bin/alembic stamp 0001_baseline --purge'
+cd /opt/life-assistant/backend
+/opt/life-assistant/backend/.venv/bin/alembic stamp 0001_baseline --purge
 
 # 3. Verify, then update normally.
-sudo -u life-assistant bash -c \
-  'cd /opt/life-assistant/backend && /opt/life-assistant/backend/.venv/bin/alembic current'   # -> 0001_baseline
-sudo -u life-assistant /opt/life-assistant/deploy/update.sh
+/opt/life-assistant/backend/.venv/bin/alembic current   # -> 0001_baseline
+/opt/life-assistant/deploy/update.sh
 ```
 
 After the stamp, every subsequent `alembic upgrade head` is a no-op on
@@ -165,11 +164,11 @@ sudo systemctl stop life-assistant
 # Untar over the data dir. The tarball restores life_assistant.db to a clean
 # state; WAL sidecars are intentionally absent and SQLite recreates
 # them on first connect.
-sudo -u life-assistant tar -xzf /var/lib/life-assistant/backups/life-assistant-<stamp>.tar.gz \
+tar -xzf /var/lib/life-assistant/backups/life-assistant-<stamp>.tar.gz \
   -C /var/lib/life-assistant/data
 
 # Drop any stale WAL sidecars from the previous run.
-sudo -u life-assistant rm -f /var/lib/life-assistant/data/life_assistant.db-shm /var/lib/life-assistant/data/life_assistant.db-wal
+rm -f /var/lib/life-assistant/data/life_assistant.db-shm /var/lib/life-assistant/data/life_assistant.db-wal
 
 sudo systemctl start life-assistant
 ```
@@ -181,13 +180,11 @@ Legacy deployments whose `/etc/life-assistant/life-assistant.env` still points `
 ## Rollback
 
 ```bash
-sudo -u life-assistant bash -c '
-  cd /opt/life-assistant
-  git log --oneline -20
-  git reset --hard <good-sha>
-  cd backend && /home/life-assistant/.local/bin/uv python install 3.11 --managed-python && /home/life-assistant/.local/bin/uv sync --frozen --python 3.11 --managed-python && /opt/life-assistant/backend/.venv/bin/alembic upgrade head
-  cd ../frontend && pnpm install --frozen-lockfile && pnpm build
-'
+cd /opt/life-assistant
+git log --oneline -20
+git reset --hard <good-sha>
+cd backend && /root/.local/bin/uv python install 3.11 --managed-python && /root/.local/bin/uv sync --frozen --python 3.11 --managed-python && /opt/life-assistant/backend/.venv/bin/alembic upgrade head
+cd ../frontend && pnpm install --frozen-lockfile && pnpm build
 sudo systemctl restart life-assistant
 ```
 
@@ -198,18 +195,17 @@ If a migration broke things, restore from the latest tarball (see
 
 | Path                              | Owner       | Purpose                              |
 |-----------------------------------|-------------|--------------------------------------|
-| `/opt/life-assistant`                       | life-assistant:life-assistant   | Repo checkout                        |
-| `/home/life-assistant/.local/bin/uv`        | life-assistant:life-assistant   | Standalone uv binary                 |
-| `/opt/life-assistant/backend/.venv`         | life-assistant:life-assistant   | Backend Python venv                  |
+| `/opt/life-assistant`                       | root:root   | Repo checkout                        |
+| `/root/.local/bin/uv`                       | root:root   | Standalone uv binary                 |
+| `/opt/life-assistant/backend/.venv`         | root:root   | Backend Python venv                  |
 | `/opt/life-assistant/data` → `/var/lib/life-assistant/data` | symlink | Repo's `data/` points at persistent volume |
-| `/var/lib/life-assistant/data/life_assistant.db`      | life-assistant:life-assistant   | SQLite (+ WAL sidecars)              |
-| `/var/lib/life-assistant/backups/`          | life-assistant:life-assistant   | Daily snapshots, last 7              |
-| `/etc/life-assistant/life-assistant.env`              | root:life-assistant 640 | Secrets                            |
-| `/etc/life-assistant/tls/{cert,key}.pem`              | life-assistant:life-assistant 640 | TLS cert + key (copied from Let's Encrypt on renewal) |
+| `/var/lib/life-assistant/data/life_assistant.db`      | root:root   | SQLite (+ WAL sidecars)              |
+| `/var/lib/life-assistant/backups/`          | root:root   | Daily snapshots, last 7              |
+| `/etc/life-assistant/life-assistant.env`              | root:root 640 | Secrets                            |
+| `/etc/life-assistant/tls/{cert,key}.pem`              | root:root | TLS cert + key (copied from Let's Encrypt on renewal) |
 | `/etc/letsencrypt/`                                   | root | Let's Encrypt state + cert lineage             |
 | `/etc/letsencrypt/renewal-hooks/deploy/life-assistant.sh` | root:root 755 | Post-renewal: re-copy cert, restart service |
 | `/etc/systemd/system/life-assistant*.{service,timer}` | root | systemd units                  |
-| `/etc/sudoers.d/life-assistant`             | root:root 440 | Limited sudo for restart + update  |
 
 ## Follow-ups (not in this deploy)
 

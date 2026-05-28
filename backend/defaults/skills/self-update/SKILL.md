@@ -11,7 +11,7 @@ Life Assistant ships its own updates: a systemd oneshot runs `deploy/update.sh`
 Run:
 
 ```
-sudo /usr/bin/systemctl start life-assistant-update.service
+/usr/bin/systemctl start life-assistant-update.service
 ```
 
 The command returns immediately; the oneshot takes ~30–60s and kills this

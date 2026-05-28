@@ -492,6 +492,12 @@ function CodexSetupCard({
   }, []);
 
   const readyStatus = status.kind === "ready" ? status.value : null;
+  const serverLoginStatus =
+    readyStatus?.importable && settings.codex.configured
+      ? "Available for refresh"
+      : readyStatus?.importable
+        ? "Ready to import"
+        : "Not ready";
 
   const saveCodex = async () => {
     setSave({ kind: "saving" });
@@ -524,7 +530,7 @@ function CodexSetupCard({
         <div className="flex flex-col gap-1 rounded-md bg-life-surface-2 p-3 text-[11px] text-life-ink-3">
           <StatusLine
             label="Server login"
-            value={status.value.importable ? "Ready to import" : "Not ready"}
+            value={serverLoginStatus}
           />
           <StatusLine
             label="Auth file"
@@ -1565,6 +1571,15 @@ function CodexCard({
   }, []);
 
   const readyStatus = status.kind === "ready" ? status.value : null;
+  const serverLoginStatus =
+    readyStatus?.importable && settings.codex.configured
+      ? "Available for refresh"
+      : readyStatus?.importable
+        ? "Ready to import"
+        : "Not ready";
+  const serverLoginAction = settings.codex.configured
+    ? "Refresh server login"
+    : "Use server login";
 
   const saveModel = async (e: FormEvent) => {
     e.preventDefault();
@@ -1625,8 +1640,8 @@ function CodexCard({
         </span>
       </header>
       <p className="text-[11px] text-life-ink-3">
-        Sign in to Codex on this server as the app user, then import that server
-        login here.
+        Sign in to Codex on this server as root, then import that server login
+        here.
       </p>
       {status.kind === "ready" ? (
         <div className="flex flex-col gap-1 rounded-md bg-life-surface-2 p-3 text-[11px] text-life-ink-3">
@@ -1640,7 +1655,7 @@ function CodexCard({
           />
           <StatusLine
             label="Server login"
-            value={status.value.importable ? "Ready to import" : "Not ready"}
+            value={serverLoginStatus}
           />
           {status.value.plan_type ? (
             <StatusLine label="Plan" value={status.value.plan_type} />
@@ -1680,10 +1695,12 @@ function CodexCard({
           onClick={importServerAuth}
           disabled={!readyStatus?.importable || serverAction.kind === "saving"}
         >
-          {serverAction.kind === "saving" ? "Importing…" : "Use server login"}
+          {serverAction.kind === "saving" ? "Importing…" : serverLoginAction}
         </Button>
         {serverAction.kind === "saved" && (
-          <span className="text-xs text-green-600">Imported.</span>
+          <span className="text-xs text-green-600">
+            {settings.codex.configured ? "Refreshed." : "Imported."}
+          </span>
         )}
         {serverAction.kind === "error" && (
           <span className="text-xs text-red-500">{serverAction.message}</span>
