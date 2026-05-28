@@ -155,7 +155,7 @@ async def import_codex_server_auth(
     db: Session = Depends(get_session),
 ) -> ProviderSettingsOut:
     try:
-        session = await codex_server_auth.load_server_session()
+        session = await codex_server_auth.load_server_session(force_refresh=False)
     except codex_server_auth.ServerAuthError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     row = service.import_codex_session(db, session=session)
