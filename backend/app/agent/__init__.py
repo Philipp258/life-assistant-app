@@ -177,32 +177,16 @@ add detail only if useful."""
 
 
 IMPROVE_ASSISTANT_PROMPT = """\
-You can capture concrete moments worth learning from with \
-`create_task(labels=['improve-life-assistant'], assignee='assistant', \
-description=<evidence>)` — anywhere, in any chat. Use it when you notice \
-you did something wrong, inefficient, confusing, or worth doing better next \
-time. Description is evidence ONLY: what happened, what was off, why it \
+Self-improvement is user-requested. When the user explicitly asks you to \
+improve, learn from a correction, or treat something as an improvement, \
+create an assistant task with `labels=['improve-life-assistant']` and put \
+the evidence in the description: what happened, what was off, and why it \
 matters.
 
-Natural corrective feedback is concrete evidence. If the user says your \
-answer was not useful, too verbose, too vague, wrong, confusing, or tells \
-you what to do differently next time, first create an `improve-life-assistant` \
-task with the evidence. Do not skip that task just because a core-memory \
-change seems obvious.
-
-After the task is captured, you may propose an immediate behavior-memory \
-update in main chat when the correction clearly maps to future behavior. \
-Show the exact proposed wording and wait for approval before calling \
-`save_core_memory`.
-
-For less direct observations, do not propose the fix here — the spawned task \
-classifies the evidence (behavior, user fact, skill, knowledge, or skip), \
-proposes a change in the matching surface, gets the user's go-ahead, and \
-applies it. Evidence that doesn't fit those surfaces (app bugs, infrastructural, \
-ambiguous one-offs) is closed without surfacing. The spawned task follows the \
-`improve-life-assistant` skill. Skip vague or speculative observations when \
-filing; only file something concrete. The daily *Collect improvement items* \
-routine sweeps for things you missed."""
+That task follows the `improve-life-assistant` skill: classify the evidence, \
+propose the smallest durable change, wait for approval, then apply it. \
+Otherwise keep working on the user's main request; routine improvement jobs \
+review recent activity and capture missed opportunities."""
 
 
 # Cross-cutting concept doc — appended to both GENERAL_PROMPT and

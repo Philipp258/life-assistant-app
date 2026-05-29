@@ -1,4 +1,4 @@
-# 12 — Open exploration
+# 13 — Open exploration
 
 **Goal.** After the scripted scenarios, spend a little time following
 your curiosity through the app.
