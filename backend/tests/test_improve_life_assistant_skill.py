@@ -82,36 +82,36 @@ def test_approval_before_durable_change_is_stated_plainly(skill_text: str) -> No
     lowered = skill_text.lower()
     collapsed = " ".join(lowered.split())
     assert "propose first; write only after approval" in lowered
-    assert "ask for approval before applying it" in collapsed
+    assert "get approval before applying it" in collapsed
 
 
 def test_user_facing_review_is_conversational(skill_text: str) -> None:
     lowered = skill_text.lower()
-    assert "## User-facing review" in skill_text
-    assert "normal conversation" in lowered
-    assert "conversational, easy language" in lowered
+    collapsed = " ".join(lowered.split())
+    assert "## Review the evidence" in skill_text
+    assert "talk to the user conversationally" in lowered
+    assert "here is what i think went wrong" in collapsed
+    assert "what i could learn from it" in collapsed
     assert "it is fine to name app concepts" not in lowered
 
 
 def test_review_move_allows_judgment_instead_of_forced_proposals(skill_text: str) -> None:
     lowered = skill_text.lower()
     collapsed = " ".join(lowered.split())
-    assert "the goal is not to produce a memory edit" in collapsed
-    assert "choose the next move with judgment" in lowered
-    assert "no durable change follows" in lowered
-    assert "one focused question" in lowered
-    assert "approve, revise, or skip" in lowered
+    assert "if nothing useful follows, close the task" in lowered
+    assert "if the case is unclear, ask a question" in collapsed
+    assert "if there is a useful durable change" in lowered
+    assert "get approval before applying it" in collapsed
 
 
 def test_abstraction_ladder_guards_against_overfitting(skill_text: str) -> None:
     lowered = skill_text.lower()
     collapsed = " ".join(lowered.split())
-    assert "use the abstraction ladder" in lowered
+    assert "use the abstraction ladder as a thinking aid" in lowered
     assert "raw case -> narrow rule -> broader principle -> intent / role" in lowered
-    assert "think across the ladder" in lowered
-    assert "not a scoring rubric" in collapsed
-    assert "a way to notice options" in lowered
-    assert "a few possible framings at different levels" in collapsed
+    assert "exploring possible framings" in lowered
+    assert "not for forcing a single answer" in collapsed
+    assert "a few possible framings" in collapsed
 
 
 def test_skill_avoids_canned_learning_examples(skill_text: str) -> None:
