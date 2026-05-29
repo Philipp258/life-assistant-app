@@ -16,29 +16,50 @@ from app.chat.models import Message
 from app.chat.service import parse_message
 
 
+def _user_prompt_has_text(part: UserPromptPart) -> bool:
+    content = part.content
+    if isinstance(content, str):
+        return bool(content.strip())
+    if isinstance(content, list):
+        for item in content:
+            if isinstance(item, str) and item.strip():
+                return True
+            text = getattr(item, "text", None)
+            if isinstance(text, str) and text.strip():
+                return True
+    return False
+
+
 def _session_has_pending_user_input(db: Session, session_id: int) -> bool:
-    """Whether the newest visible row is an unanswered user message.
+    """Whether there is an unanswered user message at the visible tail.
 
     User input arrives over the channel as a persisted user
     `ModelRequest` + a `schedule_wake`; this predicate lets that wake
     actually run a turn — for the main session, and for a task chat in
     turn-based mode (assignee='user': the user replied to a blocked
-    task and expects exactly one agent turn). It closes as soon as the
-    agent's reply (a response row) or a tool-return request lands on
-    top, so it cannot hot-loop.
+    task and expects exactly one agent turn).
+
+    Choice widgets can append request-row metadata after the user's
+    choice. Scan through that trailing metadata until either a real
+    assistant response closes the input or a non-empty user prompt is found.
     """
-    row = db.scalars(
+    rows = db.scalars(
         select(Message)
         .where(Message.session_id == session_id, Message.archived_at.is_(None))
         .order_by(Message.id.desc())
-        .limit(1)
-    ).first()
-    if row is None or row.kind != "request":
-        return False
-    msg = parse_message(row)
-    if msg is None:
-        return False
-    return any(isinstance(part, UserPromptPart) for part in msg.parts)
+        .limit(20)
+    ).all()
+    for row in rows:
+        if row.kind != "request":
+            return False
+        msg = parse_message(row)
+        if msg is None:
+            continue
+        if any(
+            isinstance(part, UserPromptPart) and _user_prompt_has_text(part) for part in msg.parts
+        ):
+            return True
+    return False
 
 
 def _is_user_or_relay_input_row(row: Message) -> bool:
@@ -50,7 +71,9 @@ def _is_user_or_relay_input_row(row: Message) -> bool:
     msg = parse_message(row)
     if msg is None:
         return False
-    return any(isinstance(part, UserPromptPart) for part in msg.parts)
+    return any(
+        isinstance(part, UserPromptPart) and _user_prompt_has_text(part) for part in msg.parts
+    )
 
 
 def _has_new_task_input_since(db: Session, session_id: int, after_id: int) -> bool:

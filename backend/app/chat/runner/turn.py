@@ -107,24 +107,32 @@ def _extract_latest_text_user_prompt(
     continuation of that graph. For turn-based task replies, the latest
     persisted user row is the new prompt; passing it explicitly lets the
     model answer it instead of replaying the prior tool-return request.
-    """
-    if not history:
-        return history, None
-    last = history[-1]
-    if not isinstance(last, ModelRequest):
-        return history, None
-    user_parts = [part for part in last.parts if isinstance(part, UserPromptPart)]
-    if not user_parts:
-        return history, None
-    if any(not isinstance(part.content, str) for part in user_parts):
-        return history, None
 
-    remaining_parts = [part for part in last.parts if not isinstance(part, UserPromptPart)]
-    trimmed = list(history[:-1])
-    if remaining_parts:
-        trimmed.append(last.model_copy(update={"parts": remaining_parts}))
-    prompt = "\n\n".join(str(part.content) for part in user_parts).strip()
-    return trimmed, prompt or None
+    Choice widgets can append tool-result metadata after the user's choice,
+    so scan back through trailing request rows instead of only checking the
+    final history item.
+    """
+    for index in range(len(history) - 1, -1, -1):
+        candidate = history[index]
+        if not isinstance(candidate, ModelRequest):
+            return history, None
+        user_parts = [part for part in candidate.parts if isinstance(part, UserPromptPart)]
+        if not user_parts:
+            continue
+        if any(not isinstance(part.content, str) for part in user_parts):
+            return history, None
+
+        prompt = "\n\n".join(str(part.content) for part in user_parts).strip()
+        if not prompt:
+            continue
+
+        remaining_parts = [part for part in candidate.parts if not isinstance(part, UserPromptPart)]
+        trimmed = list(history[:index])
+        if remaining_parts:
+            trimmed.append(candidate.model_copy(update={"parts": remaining_parts}))
+        trimmed.extend(history[index + 1 :])
+        return trimmed, prompt
+    return history, None
 
 
 async def run_session_turn(session_id: int, run_id: str = "") -> int:

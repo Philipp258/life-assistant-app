@@ -36,10 +36,12 @@ A lot of "the assistant did X wrong" moments are actually app bugs or
 wired-in prompt behavior, not memory gaps. Forcing those into behavior or
 knowledge ships brittle rules that paper over the real cause.
 
-App code lives under `backend/app/`, this is what powers you.
-`app-bug`, `app-prompt`, and `skip` all close the task with a short
-rationale and stop. No proposal, no user-facing surface. The rationale is
-useful future signal, so name what you suspected and why.
+Runtime improvement tasks do not patch the app checkout. If evidence points
+at `app-bug` or `app-prompt`, do not edit repo files or use shell commands
+to change code; call `complete_task` with a short rationale so coding and
+deploy changes can happen outside the app. `skip` also closes the task with a
+short rationale and stops. No proposal, no user-facing surface. The rationale
+is useful future signal, so name what you suspected and why.
 
 ## Action for behavior / user-fact / skill / knowledge
 

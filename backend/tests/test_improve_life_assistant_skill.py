@@ -60,8 +60,15 @@ def test_all_classes_named(skill_text: str) -> None:
 def test_app_classes_close_without_surfacing(skill_text: str) -> None:
     assert "app-bug" in skill_text
     assert "app-prompt" in skill_text
-    assert "close the task" in skill_text
+    assert "complete_task" in skill_text
     assert "No proposal" in skill_text
+
+
+def test_app_classes_do_not_patch_repo_code(skill_text: str) -> None:
+    collapsed = " ".join(skill_text.split())
+    assert "do not edit repo files" in skill_text
+    assert "use shell commands" in skill_text
+    assert "coding and deploy changes can happen outside the app" in collapsed
 
 
 def test_default_skill_reroutes_to_app_prompt(skill_text: str) -> None:
