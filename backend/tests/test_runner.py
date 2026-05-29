@@ -898,6 +898,40 @@ def test_wake_error_appends_retry_notice_to_task_chat(_test_db):
     ), texts
 
 
+def test_context_window_error_compacts_and_retries_task_before_error_count(
+    _test_db, monkeypatch, _silence_main_wake
+):
+    Session = _test_db
+    task_id, chat_id = _make_task_with_chat(Session)
+
+    calls = {"run": 0, "compact": 0}
+
+    async def fake_compact(_session_id: int) -> bool:
+        calls["compact"] += 1
+        return True
+
+    async def run_or_overflow(_session_id: int, _run_id: str = "") -> int:
+        calls["run"] += 1
+        if calls["run"] == 1:
+            raise RuntimeError("APIError: Your input exceeds the context window of this model")
+        with Session() as s:
+            task = s.get(Task, task_id)
+            assert task is not None
+            task.is_done = True
+            s.commit()
+        return 1
+
+    monkeypatch.setattr(runner, "force_compact_history", fake_compact)
+    monkeypatch.setattr(runner, "run_session_turn", run_or_overflow)
+
+    result = asyncio.run(runner.wake_session(chat_id))
+
+    assert result.outcome == "terminated"
+    assert calls == {"run": 2, "compact": 1}
+    _stalls, errors, _reschedules = _get_counters(Session, task_id)
+    assert errors == 0
+
+
 def test_wake_error_threshold_pauses_task_no_main_post(_test_db, _silence_main_wake):
     """Third hard error: final pause notice in task chat + handoff to user.
     Main-chat surfacing is delegated to the main-chat handoff (stubbed here).

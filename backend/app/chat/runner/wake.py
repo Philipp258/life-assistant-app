@@ -15,7 +15,7 @@ import secrets
 from pydantic_ai.messages import ModelResponse, TextPart
 
 from app.chat import events, pubsub
-from app.chat.service import get_or_create_main_session, save_new_messages
+from app.chat.service import force_compact_history, get_or_create_main_session, save_new_messages
 from app.chat.session_policy import resolve_kind
 from app.db import SessionLocal
 from app.tasks.models import Task
@@ -29,7 +29,13 @@ from .claims import (
     should_start_task,
 )
 from .inputs import _session_has_pending_user_input
-from .messages import MAIN_ERROR_TEMPLATE, RunResult, WakeOutcome, _sanitize_error_text
+from .messages import (
+    MAIN_ERROR_TEMPLATE,
+    RunResult,
+    WakeOutcome,
+    _is_context_window_error,
+    _sanitize_error_text,
+)
 from .outcomes import _persist_wake_outcome
 from .state import (
     _last_wake_at,
@@ -145,9 +151,36 @@ async def wake_session(session_id: int) -> RunResult:
                     stale_restart = True
                     count = restart.new_message_count
                 except Exception as exc:
-                    errored = True
-                    error_text = _sanitize_error_text(exc)
-                    logger.exception("runner: wake for session %d failed", session_id)
+                    if kind == "task" and task_id is not None and _is_context_window_error(exc):
+                        logger.warning(
+                            "runner: context-window error for task session %d; "
+                            "compacting and retrying once",
+                            session_id,
+                            exc_info=True,
+                        )
+                        try:
+                            compacted = await force_compact_history(session_id)
+                            if not compacted:
+                                raise RuntimeError(
+                                    "context window exceeded, and no task-chat history "
+                                    "could be compacted; check recent tool return sizes"
+                                ) from exc
+                            with _track_active(session_id):
+                                count = await run_session_turn(session_id, run_id)
+                        except _StaleTaskInputRestart as restart:
+                            stale_restart = True
+                            count = restart.new_message_count
+                        except Exception as retry_exc:
+                            errored = True
+                            error_text = _sanitize_error_text(retry_exc)
+                            logger.exception(
+                                "runner: context-window retry for session %d failed",
+                                session_id,
+                            )
+                    else:
+                        errored = True
+                        error_text = _sanitize_error_text(exc)
+                        logger.exception("runner: wake for session %d failed", session_id)
 
                 _last_wake_at[session_id] = asyncio.get_running_loop().time()
 

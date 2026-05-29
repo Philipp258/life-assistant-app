@@ -29,11 +29,18 @@ from pydantic_ai import Agent
 from sqlalchemy import or_, select
 
 from app.agent.deps import AgentDeps
+from app.agent.tools._paging import normalize_page
 from app.agent.tools.chats import flatten_parts, role_for
 from app.chat.models import Message
 from app.chat.service import get_or_create_main_session, parse_message
 from app.datetime_utils import normalize_to_naive_utc, serialize_utc
 from app.db import SessionLocal
+
+
+ARCHIVED_MESSAGES_PAGE_DEFAULT = 10
+ARCHIVED_MESSAGES_PAGE_MAX = 50
+ARCHIVED_CONTEXT_DEFAULT = 2
+ARCHIVED_CONTEXT_MAX = 5
 
 
 def _archive_reason(row: Message) -> str:
@@ -61,9 +68,9 @@ def _render_row(row: Message) -> dict[str, Any]:
 def do_read_archived_messages(
     *,
     query: str | None = None,
-    context: int = 2,
+    context: int = ARCHIVED_CONTEXT_DEFAULT,
     offset: int = 0,
-    limit: int = 10,
+    limit: int = ARCHIVED_MESSAGES_PAGE_DEFAULT,
     before: datetime | None = None,
     after: datetime | None = None,
 ) -> dict[str, Any]:
@@ -75,12 +82,13 @@ def do_read_archived_messages(
     way, paginate via `offset` / `limit`; the response carries `total`
     and `has_more` so callers can step through.
     """
-    if limit <= 0:
-        return {"error": "limit must be positive", "limit": limit}
-    if offset < 0:
-        return {"error": "offset must be non-negative", "offset": offset}
-    if context < 0:
-        return {"error": "context must be non-negative", "context": context}
+    safe_offset, safe_limit = normalize_page(
+        offset,
+        limit,
+        default_limit=ARCHIVED_MESSAGES_PAGE_DEFAULT,
+        max_limit=ARCHIVED_MESSAGES_PAGE_MAX,
+    )
+    safe_context = max(0, min(context, ARCHIVED_CONTEXT_MAX))
 
     needle = query.lower() if query else None
 
@@ -109,27 +117,30 @@ def do_read_archived_messages(
 
     if needle is None:
         total = len(rendered)
-        page = rendered[offset : offset + limit]
+        page = rendered[safe_offset : safe_offset + safe_limit]
         matches: list[dict[str, Any]] = [{"before": [], "match": m, "after": []} for m in page]
     else:
         hit_idxs = [i for i, r in enumerate(rendered) if needle in r["text"].lower()]
         total = len(hit_idxs)
-        page_idxs = hit_idxs[offset : offset + limit]
+        page_idxs = hit_idxs[safe_offset : safe_offset + safe_limit]
         matches = [
             {
-                "before": rendered[max(0, i - context) : i],
+                "before": rendered[max(0, i - safe_context) : i],
                 "match": rendered[i],
-                "after": rendered[i + 1 : i + 1 + context],
+                "after": rendered[i + 1 : i + 1 + safe_context],
             }
             for i in page_idxs
         ]
 
+    has_more = safe_offset + safe_limit < total
     return {
         "matches": matches,
         "total": total,
-        "offset": offset,
-        "limit": limit,
-        "has_more": offset + limit < total,
+        "offset": safe_offset,
+        "limit": safe_limit,
+        "context": safe_context,
+        "has_more": has_more,
+        "next_offset": safe_offset + safe_limit if has_more else None,
     }
 
 
@@ -139,7 +150,7 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
         query: str | None = None,
         context: int = 2,
         offset: int = 0,
-        limit: int = 10,
+        limit: int = ARCHIVED_MESSAGES_PAGE_DEFAULT,
         before: datetime | None = None,
         after: datetime | None = None,
     ) -> dict[str, Any]:
@@ -166,10 +177,10 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
           you flat-walk the archive in chronological order.
         - `context`: with `query`, how many archived rows to include
           before and after each hit so you can read the conversation
-          around it (default 2, grep-style). Ignored without `query`.
+          around it (default 2, max 5). Ignored without `query`.
         - `offset` / `limit`: paginate through results. `limit` is
-          matches per page (default 10); set `offset = previous_offset +
-          limit` to step forward, decrease to step back.
+          matches per page (default 10, max 50); set `offset` to
+          `next_offset` to step forward.
         - `before` / `after`: inclusive bounds on each row's original
           `created_at`. Narrow when you know roughly when something
           happened.
@@ -178,7 +189,8 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
         is `{before: [...], match: {...}, after: [...]}` where each row
         has `{id, kind, role, text, created_at, archived_via,
         archived_at, compacted_at}`. `total` counts hits (or all
-        archived rows if no `query`); `has_more = offset + limit < total`.
+        archived rows if no `query`); `has_more` and `next_offset` tell
+        you how to keep paging.
         """
         return do_read_archived_messages(
             query=query,

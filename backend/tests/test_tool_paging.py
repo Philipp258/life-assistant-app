@@ -127,6 +127,32 @@ def test_grep_scan_ceiling_caps_total(tmp_path: Path, monkeypatch) -> None:
     assert out["scan_capped"] is True
 
 
+def test_grep_truncates_long_match_lines(tmp_path: Path) -> None:
+    target = tmp_path / "long.txt"
+    target.write_text("needle " + "x" * (fs_tools.GREP_MATCH_MAX_CHARS + 100))
+
+    out = fs_tools.do_grep("needle", path=str(tmp_path))
+
+    assert len(out["matches"][0]["text"]) <= fs_tools.GREP_MATCH_MAX_CHARS + 14
+    assert out["matches"][0]["text"].endswith("...(truncated)")
+
+
+# --- read_file: windowed lines, lossless -------------------------------
+
+
+def test_read_file_pages_and_clamps_limit(tmp_path: Path) -> None:
+    target = tmp_path / "many.txt"
+    target.write_text("".join(f"line {i}\n" for i in range(fs_tools.READ_FILE_PAGE_MAX + 20)))
+
+    out = fs_tools.do_read_file(str(target), limit=1_000_000)
+
+    assert out["limit"] == fs_tools.READ_FILE_PAGE_MAX
+    assert out["offset"] == 0
+    assert out["has_more"] is True
+    assert out["next_offset"] == fs_tools.READ_FILE_PAGE_MAX
+    assert out["total_lines"] == fs_tools.READ_FILE_PAGE_MAX + 20
+
+
 # --- read_knowledge: windowed body, lossless --------------------------
 
 

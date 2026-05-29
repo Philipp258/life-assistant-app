@@ -22,14 +22,16 @@ from pydantic_ai.messages import (
 )
 
 from app.chat import compaction
-from app.chat.models import Message
+from app.chat.models import ChatSession, Message
 from app.chat.service import (
     aload_compacted_history,
+    aload_compacted_history_with_cursor,
     get_or_create_main_session,
     load_main_session_as_ui_messages,
     load_compacted_history,
     save_new_messages,
 )
+from app.tasks.models import Task
 
 
 # ---------- helpers ----------
@@ -553,3 +555,40 @@ def test_aload_compacted_history_persists_summary_and_marks_old_rows(_test_db, m
         compacted = [r for r in rows if r.compacted_at is not None]
         assert len(compacted) == 16
         assert rows[-1].compacted_at is None
+
+
+def test_aload_compacted_history_with_cursor_compacts_task_chat(_test_db, monkeypatch):
+    Session = _test_db
+    with Session() as s:
+        chat = ChatSession()
+        s.add(chat)
+        s.flush()
+        task = Task(title="Long task", chat_session_id=chat.id, assignee="assistant")
+        s.add(task)
+        s.flush()
+        chat.task_id = task.id
+        msgs = []
+        for i in range(10):
+            msgs.append(_user(f"u{i} " + "x" * 1000))
+            msgs.append(_assistant(f"a{i} " + "y" * 1000))
+        save_new_messages(s, chat.id, msgs)
+        session_id = chat.id
+
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "compaction_trigger_tokens", 500, raising=True)
+    monkeypatch.setattr(settings, "compaction_keep_groups", 4, raising=True)
+
+    with Session() as s:
+        result, cursor = asyncio.run(
+            aload_compacted_history_with_cursor(s, session_id, summarizer=lambda _: "task summary")
+        )
+
+    assert len(result) == 1 + 4
+    assert "task summary" in result[0].parts[0].content
+
+    with Session() as s:
+        rows = s.query(Message).filter(Message.session_id == session_id).order_by(Message.id).all()
+        assert cursor == rows[-1].id
+        assert rows[-1].compacted_at is None
+        assert sum(1 for row in rows if row.compacted_at is not None) == 16

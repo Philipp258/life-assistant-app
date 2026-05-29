@@ -34,8 +34,8 @@ from app.chat.models import ChatSession, Message
 from app.chat.repair import close_dangling_tool_calls, repair_persisted_history
 from app.chat.service import (
     aload_compacted_history,
+    aload_compacted_history_with_cursor,
     create_streaming_response_row,
-    load_session_history_with_cursor,
     publish_streaming_text_upsert,
     save_new_messages,
     update_streaming_response_row,
@@ -143,7 +143,9 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
             injected, seen = events.drain_terminal_events(db, session_id)
     else:
         with SessionLocal() as db:
-            own_history, task_history_cursor = load_session_history_with_cursor(db, session_id)
+            own_history, task_history_cursor = await aload_compacted_history_with_cursor(
+                db, session_id
+            )
 
     history: list[ModelMessage] = list(own_history)
     if task is not None and task.consecutive_stalls > 0:

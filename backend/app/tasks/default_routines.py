@@ -31,7 +31,6 @@ from app.tasks.service import create_task
 
 CONSOLIDATION_TITLE = "Daily consolidation"
 COLLECT_TITLE = "Collect improvement items"
-PROCESS_TITLE = "Process improvement items"
 DISK_SPACE_TITLE = "Weekly disk space check"
 TASK_LOG_MAINTENANCE_TITLE = "Task log maintenance"
 
@@ -71,9 +70,10 @@ already shared. Skip routine work and anything already captured; check \
 existing improvement items, including resolved ones, before creating new \
 ones.
 
-For each genuine opportunity, create an improvement item whose description \
-stands alone: what happened, what was off, and why it matters. Avoid \
-speculative or vague "could be nicer" items.
+For each genuine opportunity, create an assistant-owned improvement task \
+with `labels=['improve-life-assistant']`. Its description must stand \
+alone: what happened, what was off, and why it matters. Avoid speculative \
+or vague "could be nicer" items.
 
 Each item becomes its own task that classifies the evidence and proposes a \
 change in the relevant surface (behavior, user fact, skill, or knowledge) \
@@ -84,32 +84,9 @@ triage.
 Quiet cycle = zero items. Saying nothing is better than padding. \
 Call `complete_task` when done; the task auto-respawns for the next cycle.
 
-Tone: terse, observational, evidence-driven. You are not pitching \
-fixes here — that's the Process improvement items routine's job. You \
-are only collecting evidence."""
-
-
-PROCESS_BRIEF = """\
-You wake to turn unresolved improvement items into concrete suggestions \
-the user can review and apply.
-
-Read and follow the `improve-life-assistant` skill. It gives the context for \
-turning evidence into the right kind of durable change: core memory, \
-knowledge, or a skill.
-
-Context budget is a hard constraint. Use bounded sources first: list open \
-`improve-life-assistant` tasks, read each task description, and read only \
-the relevant task chats or knowledge notes. Do not run broad repo or \
-chat-history searches for generic improvement terms. If you must search, \
-use a narrow query, a small limit, and stop before pulling hundreds of \
-matches into context.
-
-Hard rule: do NOT apply suggestions from this routine. Do not call \
-`mark_improvement_suggestion_applied`. The Apply step is gated to \
-explicit user action via the Improve the assistant panel.
-
-Quiet cycle = zero new/updated suggestions. Call `complete_task` when \
-done; the task auto-respawns for the next cycle."""
+Tone: terse, observational, evidence-driven. You are only collecting \
+evidence; each created improvement task handles classification and any \
+proposal."""
 
 
 DISK_SPACE_BRIEF = """\
@@ -196,9 +173,8 @@ class RoutineSpec:
     labels: tuple[str, ...] = field(default_factory=tuple)
 
 
-# Cadence/time mirrors the old seed migrations: consolidation 03:00,
-# collect 04:00, process 05:00 (staggered so they don't fight for the
-# runner), disk-space Mon 10:00. All UTC.
+# Cadence/time mirrors the old seed migrations where still relevant:
+# consolidation 03:00, collect 04:00, disk-space Mon 10:00. All UTC.
 DEFAULT_ROUTINES: tuple[RoutineSpec, ...] = (
     RoutineSpec(
         key="daily-consolidation",
@@ -215,14 +191,6 @@ DEFAULT_ROUTINES: tuple[RoutineSpec, ...] = (
         interval_unit="day",
         interval_count=1,
         schedule=lambda now: _tomorrow_at(now, hour=4),
-    ),
-    RoutineSpec(
-        key="process-improvement-items",
-        title=PROCESS_TITLE,
-        description=PROCESS_BRIEF,
-        interval_unit="day",
-        interval_count=1,
-        schedule=lambda now: _tomorrow_at(now, hour=5),
     ),
     RoutineSpec(
         key="weekly-disk-space-check",
@@ -254,7 +222,6 @@ LEGACY_TITLE_MATCHES: dict[str, tuple[str, ...]] = {
     # existed. Treat that as the same shipped default instead of seeding the
     # canonical title beside it.
     "collect-improvement-items": (COLLECT_TITLE, "Collect improvement opportunities"),
-    "process-improvement-items": (PROCESS_TITLE,),
     "weekly-disk-space-check": (DISK_SPACE_TITLE,),
     "task-log-maintenance": (TASK_LOG_MAINTENANCE_TITLE, "Compress task logs"),
 }

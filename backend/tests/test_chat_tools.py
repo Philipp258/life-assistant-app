@@ -7,7 +7,9 @@ from datetime import datetime, timedelta
 from app.agent.tools.chats import (
     do_ask_user_choice,
     do_list_chat_messages,
+    do_read_main_chat_recent,
 )
+from app.chat.service import get_or_create_main_session
 from app.chat.models import ChatSession, Message
 from app.tasks.models import Task
 
@@ -200,6 +202,34 @@ def test_list_chat_messages_truncates_long_tool_returns(_test_db):
     first = out["messages"][0]
     assert len(first["text"]) < 500
     assert first["text"].endswith("…")
+
+
+def test_read_main_chat_recent_pages_and_clamps(_test_db):
+    Session = _test_db
+    with Session() as s:
+        sid = get_or_create_main_session(s).id
+
+    for i in range(125):
+        _seed_message(
+            Session,
+            sid,
+            kind="request",
+            parts=[{"part_kind": "user-prompt", "content": f"m{i}"}],
+        )
+
+    out = do_read_main_chat_recent(limit=1_000_000)
+
+    assert out["total"] == 125
+    assert out["limit"] == 100
+    assert out["has_more"] is True
+    assert out["next_offset"] == 100
+    assert len(out["messages"]) == 100
+    assert out["messages"][0]["text"] == "m25"
+    assert out["messages"][-1]["text"] == "m124"
+
+    older = do_read_main_chat_recent(limit=100, offset=100)
+    assert older["has_more"] is False
+    assert [m["text"] for m in older["messages"]] == [f"m{i}" for i in range(25)]
 
 
 def test_ask_user_choice_reassigns_to_user(_test_db):
