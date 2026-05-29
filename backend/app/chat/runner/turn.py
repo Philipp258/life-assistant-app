@@ -8,6 +8,7 @@ event drain / stall reminder logic.
 
 from __future__ import annotations
 
+from dataclasses import replace
 import logging
 from typing import Any
 
@@ -129,7 +130,7 @@ def _extract_latest_text_user_prompt(
         remaining_parts = [part for part in candidate.parts if not isinstance(part, UserPromptPart)]
         trimmed = list(history[:index])
         if remaining_parts:
-            trimmed.append(candidate.model_copy(update={"parts": remaining_parts}))
+            trimmed.append(replace(candidate, parts=remaining_parts))
         trimmed.extend(history[index + 1 :])
         return trimmed, prompt
     return history, None
