@@ -3,7 +3,8 @@
 The skill is the per-task action prompt for spawned improvement items.
 A drift here changes how every improvement task behaves, so the shape —
 classify-first into the named class set, app classes acknowledged, closing
-path that doesn't surface, approval before write — is asserted in code.
+path that doesn't surface, conversational review, approval before write —
+is asserted in code.
 """
 
 from __future__ import annotations
@@ -77,29 +78,65 @@ def test_default_skill_reroutes_to_app_prompt(skill_text: str) -> None:
     assert "app-prompt" in skill_text
 
 
-def test_concrete_change_before_apply(skill_text: str) -> None:
-    """The skill should ask for a concrete change (diff / exact wording),
-    not a paraphrase, before user approval."""
+def test_approval_before_durable_change_is_stated_plainly(skill_text: str) -> None:
     lowered = skill_text.lower()
-    assert "diff" in lowered
-    assert "not a paraphrase" in lowered or "exact" in lowered
+    collapsed = " ".join(lowered.split())
+    assert "propose first; write only after approval" in lowered
+    assert "get approval before applying it" in collapsed
+
+
+def test_user_facing_review_is_conversational(skill_text: str) -> None:
+    lowered = skill_text.lower()
+    collapsed = " ".join(lowered.split())
+    assert "## Review the evidence" in skill_text
+    assert "talk to the user conversationally" in lowered
+    assert "here is what i think went wrong" in collapsed
+    assert "what i could learn from it" in collapsed
+    assert "it is fine to name app concepts" not in lowered
+
+
+def test_review_move_allows_judgment_instead_of_forced_proposals(skill_text: str) -> None:
+    lowered = skill_text.lower()
+    collapsed = " ".join(lowered.split())
+    assert "if nothing useful follows, close the task" in lowered
+    assert "if the case is unclear, ask a question" in collapsed
+    assert "if there is a useful durable change" in lowered
+    assert "get approval before applying it" in collapsed
+
+
+def test_abstraction_ladder_guards_against_overfitting(skill_text: str) -> None:
+    lowered = skill_text.lower()
+    collapsed = " ".join(lowered.split())
+    assert "use the abstraction ladder as a thinking aid" in lowered
+    assert "raw case -> narrow rule -> broader principle -> intent / role" in lowered
+    assert "exploring possible framings" in lowered
+    assert "not for forcing a single answer" in collapsed
+    assert "a few possible framings" in collapsed
+
+
+def test_skill_avoids_canned_learning_examples(skill_text: str) -> None:
+    lowered = skill_text.lower()
+    assert "examples:" not in lowered
+    assert "missed recommendation" not in lowered
+    assert "recipe feedback" not in lowered
+    assert "tone/style preference" not in lowered
 
 
 def test_approval_before_persistence(skill_text: str) -> None:
-    """The skill must hand off for approval before any persistent write."""
+    """The skill must preserve approval before persistent writes without
+    spelling out every persistence tool."""
     lowered = skill_text.lower()
     assert "ask_user_choice" in skill_text
-    assert "stop" in lowered
-    assert "only after the user later chooses" in lowered
+    assert "approval before applying" in lowered
     for tool_name in ("save_core_memory", "save_knowledge", "write_file", "edit_file"):
-        assert tool_name in skill_text
+        assert tool_name not in skill_text
 
 
 def test_approval_reply_is_handled_before_reasking(skill_text: str) -> None:
     lowered = skill_text.lower()
     assert "latest user message answers a previous `ask_user_choice`" in skill_text
     assert "never ask the same approval question twice" in lowered
-    assert "make exactly the approved write" in lowered
+    assert "make the approved change" in lowered
     assert "complete_task" in skill_text
 
 
