@@ -90,11 +90,8 @@ def test_user_facing_review_is_conversational(skill_text: str) -> None:
     lowered = skill_text.lower()
     assert "## User-facing review" in skill_text
     assert "normal conversation" in lowered
-    assert "use easy language" in lowered
-    assert "it is fine to name app concepts" in lowered
-    assert "memory, knowledge, skills, tasks, or app bugs" in lowered
-    assert "internal taxonomy" in lowered
-    assert "mechanical checklist" in lowered
+    assert "conversational, easy language" in lowered
+    assert "it is fine to name app concepts" not in lowered
 
 
 def test_review_move_allows_judgment_instead_of_forced_proposals(skill_text: str) -> None:

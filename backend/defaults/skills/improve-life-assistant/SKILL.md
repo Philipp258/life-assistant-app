@@ -70,10 +70,7 @@ rule. Avoid broad personality changes unless several cases support them.
 ## User-facing review
 
 The visible moment should feel like a normal conversation about what the
-assistant should learn. Use easy language. It is fine to name app concepts
-like memory, knowledge, skills, tasks, or app bugs when that helps the user
-understand the choice; just don't make the user read your internal taxonomy
-or a mechanical checklist.
+assistant should learn. Use conversational, easy language.
 
 Choose the next move with judgment. Sometimes the right answer is to close
 the task with a short rationale because no durable change follows. Sometimes
