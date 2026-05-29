@@ -40,5 +40,6 @@ def test_deploy_scripts_do_not_depend_on_service_user_or_sudoers() -> None:
 
 def test_self_update_skill_starts_update_service_directly() -> None:
     text = _read("backend/defaults/skills/self-update/SKILL.md")
-    assert "/usr/bin/systemctl start life-assistant-update.service" in text
+    assert "/usr/bin/systemctl start --no-block life-assistant-update.service" in text
+    assert "complete this task" in text
     assert "sudo" not in text

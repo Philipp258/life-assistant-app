@@ -89,11 +89,11 @@ Tailscale Serve — see [`/docs/https-no-domain.md`](../frontend/public/docs/htt
 
 Tell the assistant in chat: "deploy latest" (or anything that triggers the
 `self-update` skill). The agent reads the skill and runs
-`systemctl start life-assistant-update.service` via `bash` in a task chat.
-The oneshot service runs `deploy/update.sh`: git pull, uv sync, alembic
-upgrade, frontend build, then `systemctl restart life-assistant`. Restart
-drops the listen socket for ~2s; the autonomous-task watchdog re-wakes any
-in-flight tasks on the new process.
+`systemctl start --no-block life-assistant-update.service` via `bash` in a
+task chat, then completes the task once systemd accepts the job. The oneshot
+service runs `deploy/update.sh`: git pull, uv sync, alembic upgrade, frontend
+build, then `systemctl restart life-assistant`. Restart drops the listen
+socket for ~2s.
 
 ## Manual update
 
