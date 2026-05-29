@@ -136,9 +136,11 @@ def test_main_prompt_routes_explicit_self_improvement_requests(_test_db, skills_
 
     prompt = _build_prompt(sid)
 
-    assert "Self-improvement is user-requested" in prompt
-    assert "explicitly asks you to improve" in prompt
+    assert "Self-improvement only runs when" in prompt
+    assert "asks to treat something as an improvement" in prompt
     assert "create an assistant task with `labels=['improve-life-assistant']`" in prompt
+    assert "learn from a correction" not in prompt
+    assert "Other feedback stays in the current conversation" in prompt
     assert "routine improvement jobs review recent activity" in prompt
 
 

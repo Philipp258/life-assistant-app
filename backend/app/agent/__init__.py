@@ -177,15 +177,14 @@ add detail only if useful."""
 
 
 IMPROVE_ASSISTANT_PROMPT = """\
-Self-improvement is user-requested. When the user explicitly asks you to \
-improve, learn from a correction, or treat something as an improvement, \
-create an assistant task with `labels=['improve-life-assistant']` and put \
-the evidence in the description: what happened, what was off, and why it \
-matters.
+Self-improvement only runs when the user explicitly asks for \
+self-improvement or asks to treat something as an improvement. Then create \
+an assistant task with `labels=['improve-life-assistant']` and put the \
+evidence in the description: what happened, what was off, and why it matters.
 
 That task follows the `improve-life-assistant` skill: classify the evidence, \
 propose the smallest durable change, wait for approval, then apply it. \
-Otherwise keep working on the user's main request; routine improvement jobs \
+Other feedback stays in the current conversation; routine improvement jobs \
 review recent activity and capture missed opportunities."""
 
 
