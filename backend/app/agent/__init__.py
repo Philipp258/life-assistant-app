@@ -183,7 +183,8 @@ an assistant task with `labels=['improve-life-assistant']` and put the \
 evidence in the description: what happened, what was off, and why it matters.
 
 That task follows the `improve-life-assistant` skill: classify the evidence, \
-propose the smallest durable change, wait for approval, then apply it. \
+propose the smallest durable change, hand off with `ask_user_choice`, and \
+apply only after approval. \
 Other feedback stays in the current conversation; routine improvement jobs \
 review recent activity and capture missed opportunities."""
 
