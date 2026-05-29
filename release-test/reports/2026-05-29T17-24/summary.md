@@ -4,7 +4,7 @@ Target: `root@167.233.17.131` / `https://167-233-17-131.sslip.io/`
 
 Branch: `codex/extend-release-test-scenarios`
 
-Final deployed commit: `3f9e831`
+Final deployed code commit: `f8848b2`
 
 Scope: partial retest of the edited self-improvement scenarios, plus regressions found while redeploying the PR branch.
 
@@ -34,6 +34,9 @@ Scope: partial retest of the edited self-improvement scenarios, plus regressions
 - **Runtime improvement task boundary: pass after follow-up.**
   Task #30 exposed that an improvement task could classify an app runner bug correctly but still patch `/opt/life-assistant` from inside the running app. Commit `3f9e831` keeps the useful runner regression it found and tightens the skill so app-code findings complete with rationale instead of editing repo files. After redeploy, task #32 read the skill, classified the evidence as an app-prompt/default-skill process issue, called `complete_task`, used no edit or shell tools, and left the server checkout clean apart from the expected untracked `data` path.
 
+- **Backend CI follow-up: pass.**
+  Commit `f8848b2` replaced a `ModelRequest.model_copy(...)` call with `dataclasses.replace(...)` for Pyrefly compatibility and updated a Codex server-auth test double for the newer `force_refresh` argument. The full backend CI command set now passes locally, including `pyrefly` and the full pytest suite.
+
 ## Checks
 
 - `uv run ruff format --check app tests/test_agent_prompt_skills.py tests/test_root_deploy_invariants.py`
@@ -48,4 +51,8 @@ Scope: partial retest of the edited self-improvement scenarios, plus regressions
 - `uv run ruff check app/chat/runner/inputs.py app/chat/runner/turn.py tests/test_runner.py tests/test_improve_life_assistant_skill.py`
 - `uv run ruff format --check app/chat/runner/inputs.py app/chat/runner/turn.py tests/test_runner.py tests/test_improve_life_assistant_skill.py`
 - `uv run pytest tests/test_runner.py tests/test_improve_life_assistant_skill.py`
+- `uv run ruff check .`
+- `uv run ruff format --check .`
+- `uv run pyrefly check --summarize-errors`
+- `uv run pytest`
 - `git diff --check`
