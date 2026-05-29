@@ -97,6 +97,13 @@ Read and follow the `improve-life-assistant` skill. It gives the context for \
 turning evidence into the right kind of durable change: core memory, \
 knowledge, or a skill.
 
+Context budget is a hard constraint. Use bounded sources first: list open \
+`improve-life-assistant` tasks, read each task description, and read only \
+the relevant task chats or knowledge notes. Do not run broad repo or \
+chat-history searches for generic improvement terms. If you must search, \
+use a narrow query, a small limit, and stop before pulling hundreds of \
+matches into context.
+
 Hard rule: do NOT apply suggestions from this routine. Do not call \
 `mark_improvement_suggestion_applied`. The Apply step is gated to \
 explicit user action via the Improve the assistant panel.

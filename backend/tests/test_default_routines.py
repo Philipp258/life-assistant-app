@@ -23,6 +23,7 @@ from app.tasks.default_routines import (
     DISK_SPACE_BRIEF,
     DISK_SPACE_TITLE,
     PROCESS_BRIEF,
+    PROCESS_TITLE,
     TASK_LOG_MAINTENANCE_BRIEF,
     ensure_default_routines,
 )
@@ -229,6 +230,9 @@ def test_brief_constants_are_the_final_seed_text(_test_db):
     assert COLLECT_TITLE == "Collect improvement items"
     assert "Each item becomes its own task" in COLLECT_BRIEF
     assert "let the task triage" in COLLECT_BRIEF
+    assert PROCESS_TITLE == "Process improvement items"
+    assert "Context budget is a hard constraint" in PROCESS_BRIEF
+    assert "Do not run broad repo or chat-history searches" in PROCESS_BRIEF
 
 
 def test_briefs_do_not_hardcode_interval_windows():
