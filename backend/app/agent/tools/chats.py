@@ -98,6 +98,8 @@ LIST_MESSAGES_PAGE_DEFAULT = 50
 # A model-supplied `limit` above this is clamped down so one call can't
 # flood context regardless of the arg.
 LIST_MESSAGES_PAGE_MAX = 200
+MAIN_CHAT_RECENT_PAGE_DEFAULT = 20
+MAIN_CHAT_RECENT_PAGE_MAX = 100
 
 
 def do_list_chat_messages(
@@ -194,29 +196,40 @@ def do_ask_user_choice(
     }
 
 
-def do_read_main_chat_recent(limit: int = 20) -> list[dict[str, Any]]:
+def do_read_main_chat_recent(
+    limit: int = MAIN_CHAT_RECENT_PAGE_DEFAULT,
+    offset: int = 0,
+) -> dict[str, Any]:
     """Latest N visible main-chat messages, oldest first.
 
     Resolves the singleton main session itself so the agent never has to
     know the id. Excludes rows hidden by `/new` (`archived_at IS NOT
     NULL`) so the tail mirrors what the user actually sees in main chat
     right now. Older archived/compacted history is reachable via
-    `search_main_chat_history` instead. Returns a compact role / text /
-    created_at triple per message.
+    `search_main_chat_history` instead. Pages backward from the newest
+    visible rows; each page is returned oldest-first for readability.
     """
+    safe_offset, safe_limit = normalize_page(
+        offset,
+        limit,
+        default_limit=MAIN_CHAT_RECENT_PAGE_DEFAULT,
+        max_limit=MAIN_CHAT_RECENT_PAGE_MAX,
+    )
     with SessionLocal() as session:
         main = get_or_create_main_session(session)
         main_id = main.id
-        stmt = (
-            select(Message)
-            .where(
-                Message.session_id == main_id,
-                Message.archived_at.is_(None),
-            )
-            .order_by(Message.created_at.desc(), Message.id.desc())
-            .limit(limit)
+        base = select(Message).where(
+            Message.session_id == main_id,
+            Message.archived_at.is_(None),
         )
-        rows = list(session.scalars(stmt).all())
+        total = session.scalar(select(func.count()).select_from(base.subquery())) or 0
+        rows = list(
+            session.scalars(
+                base.order_by(Message.created_at.desc(), Message.id.desc())
+                .offset(safe_offset)
+                .limit(safe_limit)
+            ).all()
+        )
 
     rows.reverse()  # latest N, returned oldest-first
     out: list[dict[str, Any]] = []
@@ -229,7 +242,15 @@ def do_read_main_chat_recent(limit: int = 20) -> list[dict[str, Any]]:
                 "created_at": serialize_utc(row.created_at),
             }
         )
-    return out
+    has_more = safe_offset + safe_limit < total
+    return {
+        "messages": out,
+        "total": total,
+        "offset": safe_offset,
+        "limit": safe_limit,
+        "has_more": has_more,
+        "next_offset": safe_offset + safe_limit if has_more else None,
+    }
 
 
 def register(agent: Agent[AgentDeps, Any]) -> None:
@@ -259,7 +280,10 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
         return do_list_chat_messages(session_id=session_id, since=since, limit=limit, offset=offset)
 
     @agent.tool_plain(prepare=only_in_task_chat)
-    def read_main_chat_recent(limit: int = 20) -> list[dict[str, Any]]:
+    def read_main_chat_recent(
+        limit: int = MAIN_CHAT_RECENT_PAGE_DEFAULT,
+        offset: int = 0,
+    ) -> dict[str, Any]:
         """Peek the recent visible tail of the user's main chat.
 
         Use when the task needs main-chat context — check what the user
@@ -268,14 +292,15 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
         with you; it is NOT a task activity feed.
 
         Returns up to `limit` latest messages currently visible in main
-        chat (default 20), oldest first, each with `{role, text,
-        created_at}`. Rows hidden by `/new` are excluded — this is just
-        the recent visible tail for notification context, not the full
-        archive. For older archived or compacted history, use
+        chat (default 20, max 100), oldest first, each with `{role,
+        text, created_at}`. `offset` pages backward from the newest
+        visible messages. Rows hidden by `/new` are excluded — this is
+        just the visible main-chat tail for notification context, not the
+        full archive. For older archived or compacted history, use
         `search_main_chat_history` instead. Only available inside a task
         chat; the main chat agent already sees its own recent context.
         """
-        return do_read_main_chat_recent(limit=limit)
+        return do_read_main_chat_recent(limit=limit, offset=offset)
 
     @agent.tool(prepare=only_in_task_chat)
     def ask_user_choice(

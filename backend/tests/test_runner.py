@@ -469,6 +469,178 @@ def test_ask_user_choice_ends_wake_before_empty_output_validation_retry(
     )
 
 
+def test_user_reply_after_ask_user_choice_runs_followup_turn(_test_db, _silence_main_wake):
+    Session = _test_db
+    task_id, chat_id = _make_task_with_chat(Session)
+    _seed_user_message(Session, chat_id)
+
+    calls = 0
+
+    def first_handler(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    tool_name="ask_user_choice",
+                    args={
+                        "question": "Apply the proposed behavior memory update?",
+                        "options": ["Apply this exact behavior rule", "Revise", "Skip"],
+                    },
+                    tool_call_id="choice-1",
+                ),
+            ]
+        )
+
+    agent = get_agent()
+    with agent.override(model=build_function_model(first_handler)):
+        first = asyncio.run(runner.wake_session(chat_id))
+
+    assert first.outcome == "terminated"
+    assert calls == 1
+    with Session() as s:
+        task = s.get(Task, task_id)
+        assert task is not None
+        assert task.assignee == "user"
+        handoff_rows = s.query(Message).filter(Message.session_id == chat_id).all()
+        assert any(row.compacted_at is not None for row in handoff_rows)
+        from app.chat.service import save_new_messages
+
+        save_new_messages(
+            s,
+            chat_id,
+            [ModelRequest(parts=[UserPromptPart(content="Apply this exact behavior rule")])],
+        )
+
+    def followup_handler(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        return ModelResponse(parts=[TextPart(content="Applied after approval.")])
+
+    with agent.override(model=build_function_model(followup_handler)):
+        second = asyncio.run(runner.wake_session(chat_id))
+
+    assert second.outcome == "terminated"
+    assert calls == 2
+    assert "Applied after approval." in _task_chat_text_messages(Session, chat_id)
+    parts = _parts_in_session(Session, chat_id)
+    assert sum(1 for p in parts if p.get("part_kind") == "tool-return") == 1
+
+
+def test_user_choice_reply_followed_by_tool_result_still_runs_followup_turn(
+    _test_db, _silence_main_wake
+):
+    Session = _test_db
+    task_id, chat_id = _make_task_with_chat(Session)
+    _seed_user_message(Session, chat_id)
+
+    calls = 0
+
+    def first_handler(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    tool_name="ask_user_choice",
+                    args={
+                        "question": "Apply the proposed behavior memory update?",
+                        "options": ["Apply this exact behavior rule", "Revise", "Skip"],
+                    },
+                    tool_call_id="choice-1",
+                ),
+            ]
+        )
+
+    agent = get_agent()
+    with agent.override(model=build_function_model(first_handler)):
+        first = asyncio.run(runner.wake_session(chat_id))
+
+    assert first.outcome == "terminated"
+    assert calls == 1
+
+    with Session() as s:
+        task = s.get(Task, task_id)
+        assert task is not None
+        assert task.assignee == "user"
+
+        from app.chat.service import save_new_messages
+
+        save_new_messages(
+            s,
+            chat_id,
+            [
+                ModelRequest(parts=[UserPromptPart(content="Apply this exact behavior rule")]),
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(
+                            tool_name="ask_user_choice",
+                            tool_call_id="choice-1",
+                            content={"ok": True, "selected": "Apply this exact behavior rule"},
+                        )
+                    ]
+                ),
+            ],
+        )
+
+    def followup_handler(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        return ModelResponse(parts=[TextPart(content="Applied after approval.")])
+
+    with agent.override(model=build_function_model(followup_handler)):
+        result = asyncio.run(runner.wake_session(chat_id))
+
+    assert result.outcome == "terminated"
+    assert calls == 2
+    assert "Applied after approval." in _task_chat_text_messages(Session, chat_id)
+    with Session() as s:
+        task = s.get(Task, task_id)
+        assert task is not None
+        assert task.assignee == "user"
+
+
+def test_empty_user_prompt_before_tool_result_does_not_resume_user_assigned_task(
+    _test_db, _silence_main_wake
+):
+    Session = _test_db
+    _task_id, chat_id = _make_task_with_chat(Session, assignee="user")
+
+    with Session() as s:
+        from app.chat.service import save_new_messages
+
+        save_new_messages(
+            s,
+            chat_id,
+            [
+                ModelRequest(parts=[UserPromptPart(content="")]),
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(
+                            tool_name="ask_user_choice",
+                            tool_call_id="choice-1",
+                            content="ok",
+                        )
+                    ]
+                ),
+            ],
+        )
+
+    calls = 0
+
+    def handler(_messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        return ModelResponse(parts=[TextPart(content="should not run")])
+
+    agent = get_agent()
+    with agent.override(model=build_function_model(handler)):
+        result = asyncio.run(runner.wake_session(chat_id))
+
+    assert result.outcome == "paused"
+    assert calls == 0
+
+
 def test_terminal_tool_error_does_not_stop_user_assigned_task_turn(_test_db, _silence_main_wake):
     """A failed terminal-tool return is model feedback, not a clean
     terminal boundary, even when the task was already assigned to the user.
@@ -896,6 +1068,40 @@ def test_wake_error_appends_retry_notice_to_task_chat(_test_db):
         "Atlas hit an error" in t and "retry" in t and "RuntimeError: provider down" in t
         for t in texts
     ), texts
+
+
+def test_context_window_error_compacts_and_retries_task_before_error_count(
+    _test_db, monkeypatch, _silence_main_wake
+):
+    Session = _test_db
+    task_id, chat_id = _make_task_with_chat(Session)
+
+    calls = {"run": 0, "compact": 0}
+
+    async def fake_compact(_session_id: int) -> bool:
+        calls["compact"] += 1
+        return True
+
+    async def run_or_overflow(_session_id: int, _run_id: str = "") -> int:
+        calls["run"] += 1
+        if calls["run"] == 1:
+            raise RuntimeError("APIError: Your input exceeds the context window of this model")
+        with Session() as s:
+            task = s.get(Task, task_id)
+            assert task is not None
+            task.is_done = True
+            s.commit()
+        return 1
+
+    monkeypatch.setattr(runner, "force_compact_history", fake_compact)
+    monkeypatch.setattr(runner, "run_session_turn", run_or_overflow)
+
+    result = asyncio.run(runner.wake_session(chat_id))
+
+    assert result.outcome == "terminated"
+    assert calls == {"run": 2, "compact": 1}
+    _stalls, errors, _reschedules = _get_counters(Session, task_id)
+    assert errors == 0
 
 
 def test_wake_error_threshold_pauses_task_no_main_post(_test_db, _silence_main_wake):

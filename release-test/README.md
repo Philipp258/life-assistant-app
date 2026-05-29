@@ -57,8 +57,8 @@ The agent does not have provider keys or a login. Put them under
 - `release-test/.secrets/codex-auth.json` — full Codex/ChatGPT
   subscription `auth.json` blob, as exported from a working `codex
   login`. The agent copies this onto the VPS as
-  `/home/life-assistant/.codex/auth.json`, then uses the in-app
-  "server login" import flow.
+  `/root/.codex/auth.json`, then uses the in-app "server login" import
+  flow.
 - `release-test/.secrets/keys.env` — simple `KEY=value` lines for any
   other provider keys. Today the only consumer is
   `BRAVE_SEARCH_API_KEY` for scenarios that need real web search.

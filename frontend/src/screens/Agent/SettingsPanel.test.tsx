@@ -32,17 +32,15 @@ const defaultProviderSettings = {
 
 const defaultCodexServerAuth: CodexServerAuthStatus = {
   codex_cli_installed: true,
-  auth_file: "/home/life-assistant/.codex/auth.json",
+  auth_file: "/root/.codex/auth.json",
   auth_file_exists: true,
   importable: true,
   configured: false,
   expires_at: "2026-05-25T12:00:00Z",
   plan_type: "plus",
   error: null,
-  login_command:
-    "sudo -u life-assistant -H env HOME=/home/life-assistant codex login --device-auth",
-  status_command:
-    "sudo -u life-assistant -H env HOME=/home/life-assistant codex login status",
+  login_command: "env HOME=/root codex login --device-auth",
+  status_command: "env HOME=/root codex login status",
 };
 
 function setupFetch(
@@ -271,6 +269,30 @@ describe("SettingsPanel — provider save buttons", () => {
       );
       expect(importCalls).toHaveLength(1);
     });
+  });
+
+  it("shows refresh wording when Codex is configured and a server login is available", async () => {
+    setupFetch({
+      provider: {
+        ...defaultProviderSettings,
+        codex: { configured: true, chat_model: null },
+      },
+      codexServerAuth: {
+        ...defaultCodexServerAuth,
+        configured: true,
+        importable: true,
+      },
+    });
+    render(<SettingsPanel />);
+
+    expect(await screen.findByText("Available for refresh")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /refresh server login/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Ready to import")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /use server login/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("PUTs Codex model when the Codex Save button is clicked", async () => {

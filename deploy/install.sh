@@ -12,13 +12,13 @@
 
 set -euo pipefail
 
-REPO_URL=${LIFE_ASSISTANT_REPO_URL:-https://github.com/Philipp258/life-assistant.git}
+REPO_URL=${LIFE_ASSISTANT_REPO_URL:-https://github.com/Philipp258/life-assistant-app.git}
 REF=${LIFE_ASSISTANT_REF:-main}
 REPO_DIR=/opt/life-assistant
 DATA_DIR=/var/lib/life-assistant/data
 BACKUP_DIR=/var/lib/life-assistant/backups
 ETC_DIR=/etc/life-assistant
-UV_BIN=/home/life-assistant/.local/bin/uv
+UV_BIN=/root/.local/bin/uv
 PENDING_PASSWORD_FILE=$ETC_DIR/initial-login-password
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -38,7 +38,7 @@ ensure_pending_login_password() {
   fi
   if [ -z "$SEED_LOGIN_PASS" ]; then
     SEED_LOGIN_PASS=$(random_hex 18)
-    install -o root -g life-assistant -m 640 /dev/null "$PENDING_PASSWORD_FILE"
+    install -o root -g root -m 600 /dev/null "$PENDING_PASSWORD_FILE"
     printf '%s\n' "$SEED_LOGIN_PASS" > "$PENDING_PASSWORD_FILE"
   fi
 }
@@ -63,7 +63,7 @@ echo "    OS: ${PRETTY_NAME:-unknown}"
 echo "==> system packages"
 apt-get update -qq
 apt-get install -y -qq \
-  sudo git curl ca-certificates sqlite3 \
+  git curl ca-certificates sqlite3 \
   build-essential certbot
 
 echo "==> nodejs 22+ (nodesource)"
@@ -81,22 +81,17 @@ corepack prepare pnpm@10.33.2 --activate
 echo "==> Codex CLI"
 npm install -g @openai/codex >/dev/null
 
-echo "==> legacy service user"
-if ! id life-assistant >/dev/null 2>&1; then
-  useradd --system --create-home --home-dir /home/life-assistant --shell /usr/sbin/nologin life-assistant
-fi
-
 echo "==> directories"
-install -d -o life-assistant -g life-assistant -m 755 "$REPO_DIR"
-install -d -o life-assistant -g life-assistant -m 750 "$DATA_DIR" "$BACKUP_DIR"
+install -d -o root -g root -m 755 "$REPO_DIR"
+install -d -o root -g root -m 750 "$DATA_DIR" "$BACKUP_DIR"
 install -d -o root -g root  -m 755 "$ETC_DIR"
 
 echo "==> clone repo (ref: $REF)"
 if [ ! -d "$REPO_DIR/.git" ]; then
-  sudo -u life-assistant git clone --quiet --branch "$REF" "$REPO_URL" "$REPO_DIR"
+  git clone --quiet --branch "$REF" "$REPO_URL" "$REPO_DIR"
 else
-  sudo -u life-assistant git -C "$REPO_DIR" fetch --quiet origin "$REF"
-  sudo -u life-assistant git -C "$REPO_DIR" reset --hard "origin/$REF"
+  git -C "$REPO_DIR" fetch --quiet origin "$REF"
+  git -C "$REPO_DIR" reset --hard "origin/$REF"
 fi
 
 # Persist the deploy ref so update.sh stays on the same branch.
@@ -113,16 +108,16 @@ if [ -e "$REPO_DIR/data" ] && [ ! -L "$REPO_DIR/data" ]; then
   mv "$REPO_DIR/data"/* "$DATA_DIR/" 2>/dev/null || true
   rm -rf "$REPO_DIR/data"
 fi
-sudo -u life-assistant ln -snf "$DATA_DIR" "$REPO_DIR/data"
+ln -snf "$DATA_DIR" "$REPO_DIR/data"
 
 echo "==> uv + Python 3.11"
-install -d -o life-assistant -g life-assistant -m 755 /home/life-assistant/.local /home/life-assistant/.local/bin
+install -d -o root -g root -m 755 /root/.local /root/.local/bin
 if [ ! -x "$UV_BIN" ]; then
-  sudo -u life-assistant env HOME=/home/life-assistant UV_NO_MODIFY_PATH=1 \
-    sh -c 'cd /home/life-assistant && curl -LsSf https://astral.sh/uv/install.sh | sh'
+  env HOME=/root UV_NO_MODIFY_PATH=1 \
+    sh -c 'cd /root && curl -LsSf https://astral.sh/uv/install.sh | sh'
 fi
-sudo -u life-assistant env HOME=/home/life-assistant \
-  sh -c "cd /home/life-assistant && '$UV_BIN' python install 3.11 --managed-python"
+env HOME=/root \
+  sh -c "cd /root && '$UV_BIN' python install 3.11 --managed-python"
 
 echo "==> env file"
 SEED_LOGIN_PASS=""
@@ -144,7 +139,7 @@ SESSION_SECRET=$SESSION_SECRET_VAL
 # from Agent → Settings.
 EOF
   chmod 640 "$ETC_DIR/life-assistant.env"
-  chown root:life-assistant "$ETC_DIR/life-assistant.env"
+  chown root:root "$ETC_DIR/life-assistant.env"
   ensure_pending_login_password
 fi
 
@@ -202,26 +197,26 @@ For release-test dry runs only, you can use Let's Encrypt staging with:
 EOF
   exit 1
 fi
-# Stage cert into /etc/life-assistant/tls/ for the service user. The renewal
-# hook re-runs this script automatically every 60 days.
+# Stage cert into /etc/life-assistant/tls/. The renewal hook re-runs this
+# script automatically every 60 days.
 /etc/letsencrypt/renewal-hooks/deploy/life-assistant.sh
 
 echo "==> first build"
-sudo -u life-assistant "$REPO_DIR/deploy/update.sh" || true   # ok if already up to date
+"$REPO_DIR/deploy/update.sh" || true   # ok if already up to date
 # update.sh exits 0 with no rebuild when already up to date; force a build
 # on first install regardless so frontend/dist exists.
 if [ ! -d "$REPO_DIR/frontend/dist" ]; then
-  sudo -u life-assistant env HOME=/home/life-assistant \
+  env HOME=/root \
     bash -c "cd $REPO_DIR/backend && $UV_BIN sync --frozen --python 3.11 --managed-python"
-  sudo -u life-assistant bash -c "cd $REPO_DIR/backend && $REPO_DIR/backend/.venv/bin/alembic upgrade head"
-  sudo -u life-assistant bash -c "cd $REPO_DIR/frontend && pnpm install --frozen-lockfile && pnpm build"
+  bash -c "cd $REPO_DIR/backend && $REPO_DIR/backend/.venv/bin/alembic upgrade head"
+  bash -c "cd $REPO_DIR/frontend && pnpm install --frozen-lockfile && pnpm build"
 fi
 
 SHOULD_SEED_LOGIN_PASS=0
 if [ -f "$PENDING_PASSWORD_FILE" ]; then
   ensure_pending_login_password
   SHOULD_SEED_LOGIN_PASS=1
-elif sudo -u life-assistant bash -c "set -a; source $ETC_DIR/life-assistant.env; set +a; cd $REPO_DIR/backend && $REPO_DIR/backend/.venv/bin/python -m app.users.needs_initial_password"; then
+elif bash -c "set -a; source $ETC_DIR/life-assistant.env; set +a; cd $REPO_DIR/backend && $REPO_DIR/backend/.venv/bin/python -m app.users.needs_initial_password"; then
   ensure_pending_login_password
   SHOULD_SEED_LOGIN_PASS=1
 fi
@@ -230,7 +225,7 @@ if [ "$SHOULD_SEED_LOGIN_PASS" = "1" ]; then
   echo "==> seed initial login password"
   # Migrations have run via update.sh / first-build branch above, so the
   # users table exists. The CLI creates the singleton row if missing.
-  sudo -u life-assistant bash -c "set -a; source $ETC_DIR/life-assistant.env; set +a; cd $REPO_DIR/backend && $REPO_DIR/backend/.venv/bin/python -m app.users.set_password '$SEED_LOGIN_PASS'"
+  bash -c "set -a; source $ETC_DIR/life-assistant.env; set +a; cd $REPO_DIR/backend && $REPO_DIR/backend/.venv/bin/python -m app.users.set_password '$SEED_LOGIN_PASS'"
 fi
 
 echo "==> systemd units"
@@ -239,10 +234,6 @@ install -o root -g root -m 644 "$REPO_DIR/deploy/life-assistant-update.service" 
 install -o root -g root -m 644 "$REPO_DIR/deploy/life-assistant-backup.service" /etc/systemd/system/life-assistant-backup.service
 install -o root -g root -m 644 "$REPO_DIR/deploy/life-assistant-backup.timer"   /etc/systemd/system/life-assistant-backup.timer
 chmod +x "$REPO_DIR/deploy/update.sh" "$REPO_DIR/deploy/backup.sh" "$REPO_DIR/deploy/certbot-deploy.sh"
-
-echo "==> sudoers"
-install -o root -g root -m 440 "$REPO_DIR/deploy/sudoers.life-assistant" /etc/sudoers.d/life-assistant
-visudo -c -q -f /etc/sudoers.d/life-assistant
 
 echo "==> enable + start"
 systemctl daemon-reload

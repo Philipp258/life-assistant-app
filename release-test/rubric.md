@@ -20,9 +20,9 @@ For each scenario, record three things.
 
 ## Freeform
 
-A short paragraph covering, where relevant: what surprised you, what
-felt slow, what was unclear, what you had to guess, what you would
-want changed before shipping.
+Use judgment. Keep it short but specific, and record anything that
+affected your confidence in the release: confusing, ugly, brittle,
+surprising, especially good, or worth checking again.
 
-Numbers help when you have them (latency, retries, error codes). Do
+Numbers help when you have them, such as retries or error codes. Do
 not invent them.

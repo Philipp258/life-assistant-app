@@ -192,7 +192,7 @@ function ProviderForm({
             <span className="font-medium text-life-ink-1">Not ready</span>
           </div>
           <code className="block break-words rounded-md bg-life-bg p-2 font-mono text-[11px] leading-relaxed">
-            sudo -u life-assistant -H env HOME=/home/life-assistant codex login --device-auth
+            env HOME=/root codex login --device-auth
           </code>
           <Button type="button" variant="outline" size="sm">
             <RefreshCw className="size-3.5" />

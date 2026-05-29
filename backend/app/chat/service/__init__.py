@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from app.chat.service.compaction_glue import (
     aload_compacted_history,
+    aload_compacted_history_with_cursor,
+    force_compact_history,
     load_compacted_history,
 )
 from app.chat.service.handoff import (
@@ -60,10 +62,12 @@ __all__ = [
     "TASK_HANDOFF_CLOSE",
     "TASK_HANDOFF_OPEN",
     "aload_compacted_history",
+    "aload_compacted_history_with_cursor",
     "create_streaming_response_row",
     "extract_task_handoff_text",
     "finalize_response_metadata",
     "format_task_handoff",
+    "force_compact_history",
     "get_or_create_main_session",
     "get_session",
     "inject_onboarding_greeting_if_needed",

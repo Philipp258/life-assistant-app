@@ -1,13 +1,13 @@
 ---
 name: improve-life-assistant
-description: Inside an improve-life-assistant task — classify the evidence, propose a confirmed durable change in the right surface, and apply it. Not for main chat.
+description: Inside an improve-life-assistant task — classify the evidence, propose a confirmed durable change in the right surface, and apply it after approval. Not for main chat.
 ---
 
 # Improve the Assistant
 
 You are inside one improvement task. The description is evidence — what
 happened and what was off. Turn it into the smallest durable change that
-improves future behavior, get the user's go-ahead, and apply it.
+improves future behavior. Propose first; write only after approval.
 
 ## Classify first
 
@@ -36,16 +36,27 @@ A lot of "the assistant did X wrong" moments are actually app bugs or
 wired-in prompt behavior, not memory gaps. Forcing those into behavior or
 knowledge ships brittle rules that paper over the real cause.
 
-App code lives under `backend/app/`, this is what powers you.
-`app-bug`, `app-prompt`, and `skip` all close the task with a short
-rationale and stop. No proposal, no user-facing surface. The rationale is
-useful future signal, so name what you suspected and why.
+Runtime improvement tasks do not patch the app checkout. If evidence points
+at `app-bug` or `app-prompt`, do not edit repo files or use shell commands
+to change code; call `complete_task` with a short rationale so coding and
+deploy changes can happen outside the app. `skip` also closes the task with a
+short rationale and stops. No proposal, no user-facing surface. The rationale
+is useful future signal, so name what you suspected and why.
 
 ## Action for behavior / user-fact / skill / knowledge
 
+If the latest user message answers a previous `ask_user_choice`, handle
+that answer before proposing anything new:
+
+- Apply / yes: make exactly the approved write, then call `complete_task`.
+- Revise / custom wording: draft the revised exact change and ask again.
+- Skip / no: call `complete_task` with a short note that no change was made.
+
+Never ask the same approval question twice.
+
 Read the current state of the surface you picked. Draft the actual change
 and show it to the user concretely — a diff or the exact new wording, not a
-paraphrase — and ask whether to apply.
+paraphrase.
 
 Evidence is concrete; the change usually shouldn't be. The default failure
 mode — and the thing that makes the assistant brittle over time — is
@@ -54,7 +65,12 @@ of the principle behind it ("I prefer lighter meals"). By default, offer a
 few phrasings at different points on the ladder — raw incident → rule →
 principle → persona-level shift — and let the user pick. Drop levels that
 obviously don't fit; collapse to one option only when the others genuinely
-make no sense. Apply on go-ahead, drop on no, revise on edit.
+make no sense.
+
+Then call `ask_user_choice` with options to apply, revise, or skip, and
+stop. Do not call `save_core_memory`, `save_knowledge`, `write_file`, or
+`edit_file` in the same run that asks. Only after the user later chooses
+apply should you make the approved write. Drop on no, revise on edit.
 
 When editing a skill or knowledge note, write for the runtime assistant who
 will read it later — "you" means that assistant inside the app, not the

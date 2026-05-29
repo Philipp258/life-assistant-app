@@ -57,7 +57,8 @@ def test_invalid_codex_server_auth_rejected_and_state_unchanged(
     """A failed server-auth import must not trap the user in chat."""
     from app.provider_settings import codex_server_auth
 
-    async def _bad_server_session() -> None:
+    async def _bad_server_session(*, force_refresh: bool = False) -> None:
+        _ = force_refresh
         raise codex_server_auth.ServerAuthError("server Codex login is invalid")
 
     monkeypatch.setattr(codex_server_auth, "load_server_session", _bad_server_session)

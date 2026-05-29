@@ -28,11 +28,10 @@ locally and you carry them in.
   and use it whenever the app prompts you to sign in.
 - **Chat provider auth.** Read `release-test/.secrets/codex-auth.json`
   and seed it onto the VPS as
-  `/home/life-assistant/.codex/auth.json`, owned by `life-assistant`
-  with mode `600`. This simulates a completed server-side
-  `codex login --device-auth`. Then configure the Codex (ChatGPT
-  subscription) provider from the app UI by using the server login
-  import flow.
+  `/root/.codex/auth.json`, owned by `root` with mode `600`. This
+  simulates a completed server-side `codex login --device-auth`. Then
+  configure the Codex (ChatGPT subscription) provider from the app UI by
+  using the server login import flow.
 - **Brave Search API key.** Read
   `release-test/.secrets/keys.env` (simple `KEY=value` lines) and set
   the Brave Search key in the app wherever provider/integration
@@ -77,9 +76,9 @@ and continue with the next scenario that does not depend on it.
 
 ## Ground rules
 
-- Do not invent scenarios. If something interesting falls outside the
-  catalog, ignore it. Do not log "would-be" scenarios. The catalog is
-  the contract.
+- Do not invent scenarios outside the catalog. The final open
+  exploration scenario is intentionally loose; before that, stay inside
+  the current scenario's user goal.
 - Do not take screenshots. Describe what you saw in words.
 - Treat the project README and `AGENTS.md` as trusted documentation
   for setup-phase scenarios. For app-phase scenarios, behave like a

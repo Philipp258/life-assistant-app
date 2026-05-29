@@ -177,21 +177,16 @@ add detail only if useful."""
 
 
 IMPROVE_ASSISTANT_PROMPT = """\
-You can capture concrete moments worth learning from with \
-`create_task(labels=['improve-life-assistant'], assignee='assistant', \
-description=<evidence>)` — anywhere, in any chat. Use it when you notice \
-you did something wrong, inefficient, confusing, or worth doing better next \
-time. Description is evidence ONLY: what happened, what was off, why it \
-matters.
+Self-improvement only runs when the user explicitly asks for \
+self-improvement or asks to treat something as an improvement. Then create \
+an assistant task with `labels=['improve-life-assistant']` and put the \
+evidence in the description: what happened, what was off, and why it matters.
 
-Do not propose the fix here — the spawned task classifies the evidence \
-(behavior, user fact, skill, knowledge, or skip), proposes a change in \
-the matching surface, gets the user's go-ahead, and applies it. Evidence \
-that doesn't fit those surfaces (app bugs, infrastructural, ambiguous \
-one-offs) is closed without surfacing. The spawned task follows the \
-`improve-life-assistant` skill. Skip vague or speculative observations \
-when filing; only file something concrete. The daily *Collect improvement \
-items* routine sweeps for things you missed."""
+That task follows the `improve-life-assistant` skill: classify the evidence, \
+propose the smallest durable change, hand off with `ask_user_choice`, and \
+apply only after approval. \
+Other feedback stays in the current conversation; routine improvement jobs \
+review recent activity and capture missed opportunities."""
 
 
 # Cross-cutting concept doc — appended to both GENERAL_PROMPT and

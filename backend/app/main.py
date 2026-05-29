@@ -23,6 +23,7 @@ from app.db import SessionLocal, engine
 from app.health.router import router as health_router
 from app.knowledge import core as core_memory
 from app.knowledge.router import router as knowledge_router
+from app.labels.defaults import ensure_default_labels
 from app.labels.router import router as labels_router
 from app.notifications import due_scheduler
 from app.notifications.router import router as notifications_router
@@ -44,6 +45,7 @@ from app.voice.router import router as voice_router
 
 def seed_repo_defaults(db: Session) -> None:
     """Materialize repo-shipped defaults that should exist on every install."""
+    ensure_default_labels(db)
     ensure_default_routines(db)
     ensure_default_saved_views(db)
 

@@ -12,7 +12,12 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from app.agent.tools.archived_messages import do_read_archived_messages
+from app.agent.tools.archived_messages import (
+    ARCHIVED_CONTEXT_MAX,
+    ARCHIVED_MESSAGES_PAGE_DEFAULT,
+    ARCHIVED_MESSAGES_PAGE_MAX,
+    do_read_archived_messages,
+)
 from app.chat.models import ChatSession, Message
 from app.chat.service import get_or_create_main_session
 from app.datetime_utils import utc_now
@@ -158,21 +163,47 @@ def test_limit_caps_results(_test_db):
     assert _texts(out) == ["m0", "m1"]
     assert out["total"] == 5
     assert out["has_more"] is True
+    assert out["next_offset"] == 2
 
 
-def test_invalid_limit_returns_error(_test_db):
+def test_limit_clamps_to_max(_test_db):
+    Session = _test_db
+    sid = _main_id(Session)
+    stamp = utc_now()
+    for i in range(ARCHIVED_MESSAGES_PAGE_MAX + 5):
+        _seed(
+            Session,
+            sid,
+            text=f"m{i}",
+            created_at=stamp + timedelta(seconds=i),
+            archived_at=stamp,
+        )
+
+    out = do_read_archived_messages(limit=1_000_000)
+
+    assert out["limit"] == ARCHIVED_MESSAGES_PAGE_MAX
+    assert len(out["matches"]) == ARCHIVED_MESSAGES_PAGE_MAX
+    assert out["has_more"] is True
+
+
+def test_non_positive_limit_uses_default(_test_db):
     out = do_read_archived_messages(limit=0)
-    assert "error" in out
+    assert "error" not in out
+    assert out["limit"] == ARCHIVED_MESSAGES_PAGE_DEFAULT
 
 
-def test_invalid_offset_returns_error(_test_db):
+def test_negative_offset_clamps_to_zero(_test_db):
     out = do_read_archived_messages(offset=-1)
-    assert "error" in out
+    assert "error" not in out
+    assert out["offset"] == 0
 
 
-def test_invalid_context_returns_error(_test_db):
+def test_context_clamps_to_safe_range(_test_db):
     out = do_read_archived_messages(context=-1)
-    assert "error" in out
+    assert "error" not in out
+    assert out["context"] == 0
+    out = do_read_archived_messages(context=1_000_000)
+    assert out["context"] == ARCHIVED_CONTEXT_MAX
 
 
 def test_other_session_archives_do_not_leak(_test_db):

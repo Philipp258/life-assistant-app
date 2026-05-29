@@ -60,8 +60,15 @@ def test_all_classes_named(skill_text: str) -> None:
 def test_app_classes_close_without_surfacing(skill_text: str) -> None:
     assert "app-bug" in skill_text
     assert "app-prompt" in skill_text
-    assert "close the task" in skill_text
+    assert "complete_task" in skill_text
     assert "No proposal" in skill_text
+
+
+def test_app_classes_do_not_patch_repo_code(skill_text: str) -> None:
+    collapsed = " ".join(skill_text.split())
+    assert "do not edit repo files" in skill_text
+    assert "use shell commands" in skill_text
+    assert "coding and deploy changes can happen outside the app" in collapsed
 
 
 def test_default_skill_reroutes_to_app_prompt(skill_text: str) -> None:
@@ -79,11 +86,21 @@ def test_concrete_change_before_apply(skill_text: str) -> None:
 
 
 def test_approval_before_persistence(skill_text: str) -> None:
-    """Some form of asking-before-applying must be present — exact phrasing
-    is the agent's call."""
+    """The skill must hand off for approval before any persistent write."""
     lowered = skill_text.lower()
-    assert "go-ahead" in lowered or "approval" in lowered or "ask" in lowered
-    assert "apply" in lowered
+    assert "ask_user_choice" in skill_text
+    assert "stop" in lowered
+    assert "only after the user later chooses" in lowered
+    for tool_name in ("save_core_memory", "save_knowledge", "write_file", "edit_file"):
+        assert tool_name in skill_text
+
+
+def test_approval_reply_is_handled_before_reasking(skill_text: str) -> None:
+    lowered = skill_text.lower()
+    assert "latest user message answers a previous `ask_user_choice`" in skill_text
+    assert "never ask the same approval question twice" in lowered
+    assert "make exactly the approved write" in lowered
+    assert "complete_task" in skill_text
 
 
 def test_no_sibling_tasks(skill_text: str) -> None:

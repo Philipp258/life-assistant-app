@@ -25,7 +25,7 @@ import sys
 from types import ModuleType
 from typing_extensions import override
 
-from app.chat.service import save_new_messages
+from app.chat.service import force_compact_history, save_new_messages
 from app.db import SessionLocal
 
 from . import claims as _claims
@@ -55,6 +55,7 @@ from .messages import (
     RunResult,
     WakeOutcome,
     _build_stall_reminder,
+    _is_context_window_error,
     _sanitize_error_text,
     _StaleTaskInputRestart,
 )
@@ -109,6 +110,7 @@ __all__ = [
     "WakeOutcome",
     "list_active_sessions",
     "list_in_flight_tasks",
+    "force_compact_history",
     "run_session_turn",
     "save_new_messages",
     "schedule_wake",
@@ -119,6 +121,7 @@ __all__ = [
     "stop_watchdog",
     "wake_main_for_terminal",
     "wake_session",
+    "_is_context_window_error",
 ]
 
 
@@ -135,6 +138,7 @@ _PROPAGATE_TO: dict[str, tuple[ModuleType, ...]] = {
     "run_session_turn": (_wake,),
     "_persist_wake_outcome": (_wake,),
     "save_new_messages": (_turn, _outcomes, _wake),
+    "force_compact_history": (_wake,),
     "SessionLocal": (_claims, _outcomes, _turn, _wake, _watchdog),
     "_main_loop": (_state,),
 }

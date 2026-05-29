@@ -11,6 +11,7 @@ using it.
 **Done when.** You can send a message in the main chat and get a real
 reply back from the configured provider, not a placeholder or error.
 
-**Rate.** Whether the onboarding flow makes it obvious what to do
-next, whether any required step is hidden or out of order, whether
-errors during provider setup are understandable.
+**Rate.** Use judgment on the whole first-use experience. Mention
+anything that helped or hurt your confidence: the flow, wording,
+provider setup, error messages, visual polish, and whether the app
+felt understandable without prior knowledge.

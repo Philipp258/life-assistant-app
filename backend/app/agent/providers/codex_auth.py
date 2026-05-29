@@ -4,9 +4,9 @@ Source of credentials
 ---------------------
 The Codex CLI stores OAuth credentials in ``$CODEX_HOME/auth.json``
 (default ``~/.codex/auth.json``). For Life Assistant the user authenticates
-on the VPS as the service user, then imports that file into typed provider
-settings columns. Runtime refresh writes the new parsed session back via a
-persist callback.
+on the VPS as root, then imports that file into typed provider settings
+columns. Runtime refresh writes the new parsed session back via a persist
+callback.
 
 JSON shape (``auth.json``)
 --------------------------
@@ -61,9 +61,8 @@ class AuthExpiredError(Exception):
         super().__init__(
             f"Codex CLI session expired and could not be refreshed: {reason}. "
             "SSH to the server and run "
-            "`sudo -u life-assistant -H env HOME=/home/life-assistant "
-            "codex login --device-auth`, then open Settings and use the server "
-            "Codex login again."
+            "`env HOME=/root codex login --device-auth`, then open Settings "
+            "and use the server Codex login again."
         )
 
 

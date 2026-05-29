@@ -8,6 +8,7 @@ event drain / stall reminder logic.
 
 from __future__ import annotations
 
+from dataclasses import replace
 import logging
 from typing import Any
 
@@ -23,6 +24,7 @@ from pydantic_ai.messages import (
     TextPart,
     TextPartDelta,
     ToolReturnPart,
+    UserPromptPart,
 )
 from pydantic_graph.nodes import End
 
@@ -34,8 +36,8 @@ from app.chat.models import ChatSession, Message
 from app.chat.repair import close_dangling_tool_calls, repair_persisted_history
 from app.chat.service import (
     aload_compacted_history,
+    aload_compacted_history_with_cursor,
     create_streaming_response_row,
-    load_session_history_with_cursor,
     publish_streaming_text_upsert,
     save_new_messages,
     update_streaming_response_row,
@@ -97,6 +99,43 @@ def _stop_after_terminal_task_boundary(
     return True
 
 
+def _extract_latest_text_user_prompt(
+    history: list[ModelMessage],
+) -> tuple[list[ModelMessage], str | None]:
+    """Move the latest persisted text user prompt into Agent.iter input.
+
+    pydantic-ai treats a history tail after a previous tool call as a
+    continuation of that graph. For turn-based task replies, the latest
+    persisted user row is the new prompt; passing it explicitly lets the
+    model answer it instead of replaying the prior tool-return request.
+
+    Choice widgets can append tool-result metadata after the user's choice,
+    so scan back through trailing request rows instead of only checking the
+    final history item.
+    """
+    for index in range(len(history) - 1, -1, -1):
+        candidate = history[index]
+        if not isinstance(candidate, ModelRequest):
+            return history, None
+        user_parts = [part for part in candidate.parts if isinstance(part, UserPromptPart)]
+        if not user_parts:
+            continue
+        if any(not isinstance(part.content, str) for part in user_parts):
+            return history, None
+
+        prompt = "\n\n".join(str(part.content) for part in user_parts).strip()
+        if not prompt:
+            continue
+
+        remaining_parts = [part for part in candidate.parts if not isinstance(part, UserPromptPart)]
+        trimmed = list(history[:index])
+        if remaining_parts:
+            trimmed.append(replace(candidate, parts=remaining_parts))
+        trimmed.extend(history[index + 1 :])
+        return trimmed, prompt
+    return history, None
+
+
 async def run_session_turn(session_id: int, run_id: str = "") -> int:
     """Run one agent call against the session, persisting incrementally.
 
@@ -143,7 +182,9 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
             injected, seen = events.drain_terminal_events(db, session_id)
     else:
         with SessionLocal() as db:
-            own_history, task_history_cursor = load_session_history_with_cursor(db, session_id)
+            own_history, task_history_cursor = await aload_compacted_history_with_cursor(
+                db, session_id
+            )
 
     history: list[ModelMessage] = list(own_history)
     if task is not None and task.consecutive_stalls > 0:
@@ -171,6 +212,10 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
     # wake (no real user message) a valid request and a clear triage
     # target; the model replies or calls `do_nothing` (silence).
     history = history + injected
+
+    user_prompt: str | None = None
+    if kind == "task" and task is not None and task.assignee == "user":
+        history, user_prompt = _extract_latest_text_user_prompt(history)
 
     agent = get_agent()
     voice = _pending_voice.pop(session_id, False)
@@ -292,6 +337,8 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
         deps=AgentDeps(session_id=session_id, voice_mode=voice),
         usage_limits=default_usage_limits(),
     )
+    if user_prompt is not None:
+        iter_kwargs["user_prompt"] = user_prompt
     if seen:
         # Drain turns only: offer the terminating `do_nothing` output
         # tool. Calling it ends the run (pydantic-ai output-tool
@@ -344,9 +391,32 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
 
     async with agent.iter(**iter_kwargs) as agent_run:
         final_messages: list[ModelMessage] = []
+        skipped_persisted_request_prefix = False
+
+        def _skip_persisted_request_prefix(messages: list[ModelMessage]) -> None:
+            nonlocal persisted_count, skipped_persisted_request_prefix
+            if skipped_persisted_request_prefix or defer_persist or kind != "task":
+                return
+            if not messages:
+                return
+            skipped_persisted_request_prefix = True
+            prefix_count = 0
+            for message in messages:
+                if not isinstance(message, ModelRequest):
+                    break
+                prefix_count += 1
+            if prefix_count:
+                # pydantic-ai can surface the already-persisted request tail
+                # (for example a prior tool return plus the user's latest
+                # answer) in new_messages() before the next model step. Do
+                # not write that tail again; doing so makes the stale-input
+                # guard see our own duplicate user message and abort the turn.
+                persisted_count = prefix_count
+
         try:
             async for node in agent_run:
                 messages = list(agent_run.new_messages())
+                _skip_persisted_request_prefix(messages)
                 _flush(messages)
                 if _stop_for_stale_task_input(node):
                     restart_for_stale_input = True
@@ -361,6 +431,7 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
                 if stream_model_requests and Agent.is_model_request_node(node):
                     await _stream_text(node)
                 messages = list(agent_run.new_messages())
+                _skip_persisted_request_prefix(messages)
                 _flush(messages)
                 if _stop_for_stale_task_input(node):
                     restart_for_stale_input = True

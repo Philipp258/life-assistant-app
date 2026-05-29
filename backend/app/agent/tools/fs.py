@@ -29,6 +29,7 @@ class GrepMatch(TypedDict):
 
 MAX_LINE_CHARS = 2000
 DEFAULT_READ_LIMIT = 2000
+READ_FILE_PAGE_MAX = 5000
 GLOB_CAP = 200
 # Hard ceiling on matches collected before paging — bounds memory/work
 # on a pathologically broad pattern. The agent narrows the pattern if it
@@ -38,6 +39,7 @@ GREP_PAGE_DEFAULT = 100
 # Upper bound on a single page — a model-supplied `limit` above this is
 # clamped down so one call can't flood context regardless of the arg.
 GREP_PAGE_MAX = 500
+GREP_MATCH_MAX_CHARS = 1000
 GREP_TIMEOUT_SECONDS = 30
 BINARY_SNIFF_BYTES = 8192
 
@@ -89,8 +91,13 @@ def do_read_file(path: str, offset: int = 0, limit: int = DEFAULT_READ_LIMIT) ->
 
     raw_lines = text.splitlines()
     total = len(raw_lines)
-    start = max(offset, 0)
-    end = start + limit if limit > 0 else total
+    start, safe_limit = normalize_page(
+        offset,
+        limit,
+        default_limit=DEFAULT_READ_LIMIT,
+        max_limit=READ_FILE_PAGE_MAX,
+    )
+    end = start + safe_limit
     chunk = raw_lines[start:end]
 
     rendered: list[str] = []
@@ -103,7 +110,11 @@ def do_read_file(path: str, offset: int = 0, limit: int = DEFAULT_READ_LIMIT) ->
         "path": str(target),
         "lines": "\n".join(rendered),
         "total_lines": total,
+        "offset": start,
+        "limit": safe_limit,
         "truncated": end < total,
+        "has_more": end < total,
+        "next_offset": end if end < total else None,
     }
 
 
@@ -230,7 +241,7 @@ def _grep_with_rg(
                 ln = int(parts[1])
             except ValueError:
                 continue
-            matches.append({"path": parts[0], "line": ln, "text": parts[2]})
+            matches.append({"path": parts[0], "line": ln, "text": _truncate_match(parts[2])})
             if len(matches) >= GREP_SCAN_CEILING:
                 break
     finally:
@@ -241,6 +252,12 @@ def _grep_with_rg(
             proc.kill()
             proc.wait()
     return matches
+
+
+def _truncate_match(text: str) -> str:
+    if len(text) <= GREP_MATCH_MAX_CHARS:
+        return text
+    return text[:GREP_MATCH_MAX_CHARS].rstrip() + "...(truncated)"
 
 
 def _grep_python(pattern: str, path: str, glob: str | None) -> list[GrepMatch] | dict[str, Any]:
@@ -274,7 +291,7 @@ def _grep_python(pattern: str, path: str, glob: str | None) -> list[GrepMatch] |
                             {
                                 "path": str(fp),
                                 "line": i,
-                                "text": line.rstrip("\n"),
+                                "text": _truncate_match(line.rstrip("\n")),
                             }
                         )
                         if len(matches) >= GREP_SCAN_CEILING:
@@ -322,10 +339,11 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
     def read_file(path: str, offset: int = 0, limit: int = DEFAULT_READ_LIMIT) -> dict[str, Any]:
         """Read a text file. Path is relative to repo root or absolute.
 
-        Returns `cat -n` formatted lines starting at 1-indexed
+        Returns `cat -n` formatted lines starting at zero-based
         `offset` (default 0 = from the top), up to `limit` lines.
-        Individual lines >2000 chars get truncated. Binary files are
-        refused. `total_lines` is the file's full line count.
+        `limit` is clamped to 5000 lines max. Individual lines >2000
+        chars get truncated. Binary files are refused. `total_lines`,
+        `has_more`, and `next_offset` tell you how to keep paging.
         """
         return do_read_file(path, offset=offset, limit=limit)
 

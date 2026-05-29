@@ -11,6 +11,7 @@ upcoming weekday. They want a reminder the morning before.
 can find in the app, dated for the correct time. End-to-end firing
 (days later) is out of scope.
 
-**Rate.** Whether the assistant understood the time correctly, whether
-the created item is easy to locate in the UI, whether it looks like
-something a user would trust to actually fire.
+**Rate.** Use judgment. Note whether the assistant understood the
+time, whether the created item was easy to find and inspect, and
+anything else that affected your trust that the reminder will actually
+work.

@@ -22,7 +22,6 @@ from app.tasks.default_routines import (
     DEFAULT_ROUTINES,
     DISK_SPACE_BRIEF,
     DISK_SPACE_TITLE,
-    PROCESS_BRIEF,
     TASK_LOG_MAINTENANCE_BRIEF,
     ensure_default_routines,
 )
@@ -38,6 +37,7 @@ def test_seeds_every_routine_once(_test_db):
 
         tasks = db.scalars(select(Task)).all()
         assert {t.title for t in tasks} == _ALL_TITLES
+        assert "Process improvement items" not in {t.title for t in tasks}
 
         by_title = {t.title: t for t in tasks}
         for spec in DEFAULT_ROUTINES:
@@ -227,8 +227,10 @@ def test_brief_constants_are_the_final_seed_text(_test_db):
     assert CONSOLIDATION_TITLE == "Daily consolidation"
     assert "harvest durable bits" in CONSOLIDATION_BRIEF
     assert COLLECT_TITLE == "Collect improvement items"
+    assert "labels=['improve-life-assistant']" in COLLECT_BRIEF
     assert "Each item becomes its own task" in COLLECT_BRIEF
     assert "let the task triage" in COLLECT_BRIEF
+    assert "Process improvement items routine" not in COLLECT_BRIEF
 
 
 def test_briefs_do_not_hardcode_interval_windows():
@@ -252,7 +254,6 @@ def test_briefs_do_not_hardcode_interval_windows():
     for brief in (
         CONSOLIDATION_BRIEF,
         COLLECT_BRIEF,
-        PROCESS_BRIEF,
         DISK_SPACE_BRIEF,
         TASK_LOG_MAINTENANCE_BRIEF,
     ):

@@ -161,6 +161,29 @@ def _sanitize_error_text(exc: BaseException, *, max_len: int = 400) -> str:
     return summary
 
 
+def _is_context_window_error(exc: BaseException) -> bool:
+    """Best-effort provider-agnostic context overflow detection."""
+    needles = (
+        "context window",
+        "context length",
+        "input exceeds",
+        "maximum context",
+        "too many tokens",
+        "token limit",
+    )
+    for candidate in _exception_chain(exc):
+        chunks = [type(candidate).__name__, str(candidate)]
+        body = getattr(candidate, "body", None)
+        if isinstance(body, dict):
+            chunks.extend(str(value) for value in body.values())
+        elif body is not None:
+            chunks.append(str(body))
+        haystack = " ".join(chunks).lower()
+        if any(needle in haystack for needle in needles):
+            return True
+    return False
+
+
 def _format_cadence(interval_count: int, interval_unit: str) -> str:
     """Human cadence phrase: 'every day', 'every 2 weeks'."""
     if interval_count == 1:

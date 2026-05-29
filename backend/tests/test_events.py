@@ -86,7 +86,9 @@ def test_handoff_from_any_task_reaches_main(_test_db):
     Session = _test_db
     chat_id = _task_chat(Session, title="Weekly disk check")
     with Session() as s:
-        save_task_handoff(s, chat_id, "Disk at 71%, nothing urgent.")
+        row = save_task_handoff(s, chat_id, "Disk at 71%, nothing urgent.")
+        assert row is not None
+        assert row.compacted_at is not None
         main_id = get_or_create_main_session(s).id
 
     with Session() as s:

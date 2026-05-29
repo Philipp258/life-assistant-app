@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Daily snapshot of /var/lib/life-assistant/data: SQLite DB + markdown
 # (core memory, knowledge, user-installed skills). Keeps last 7.
-# Runs as `life-assistant` via life-assistant-backup.service.
+# Runs as root via life-assistant-backup.service.
 set -euo pipefail
 
 DATA_DIR=${LIFE_ASSISTANT_DATA_DIR:-/var/lib/life-assistant/data}

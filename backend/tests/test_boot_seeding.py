@@ -12,6 +12,8 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from app.labels.defaults import IMPROVE_LIFE_ASSISTANT_LABEL
+from app.labels.models import Label
 from app.saved_task_views.models import SavedTaskView
 from app.tasks.default_routines import DEFAULT_ROUTINES
 from app.tasks.models import Task
@@ -21,10 +23,12 @@ _ALL_TITLES = {spec.title for spec in DEFAULT_ROUTINES}
 
 def test_lifespan_seeds_defaults(_test_db, monkeypatch):
     from app import main as main_mod
+    from app.labels.defaults import ensure_default_labels
     from app.saved_task_views.defaults import ensure_default_saved_views
     from app.tasks.default_routines import ensure_default_routines
 
     def seed_repo_defaults(db):
+        ensure_default_labels(db)
         ensure_default_routines(db)
         ensure_default_saved_views(db)
 
@@ -38,6 +42,9 @@ def test_lifespan_seeds_defaults(_test_db, monkeypatch):
         pass
 
     with _test_db() as db:
+        labels = list(db.scalars(select(Label).order_by(Label.slug)))
+        assert [label.slug for label in labels] == [IMPROVE_LIFE_ASSISTANT_LABEL]
+
         titles = set(db.scalars(select(Task.title)))
         assert _ALL_TITLES <= titles
         assert len(db.scalars(select(Task)).all()) == len(DEFAULT_ROUTINES)
@@ -60,5 +67,6 @@ def test_lifespan_uses_test_noop_for_clean_client_state(_test_db):
         pass
 
     with _test_db() as db:
+        assert db.scalar(select(Label.id).limit(1)) is None
         assert db.scalar(select(Task.id).limit(1)) is None
         assert db.scalar(select(SavedTaskView.id).limit(1)) is None

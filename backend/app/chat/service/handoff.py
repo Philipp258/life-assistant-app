@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.chat.models import Message
 from app.chat.service.history import parse_message
 from app.chat.service.writes import save_new_messages
+from app.datetime_utils import utc_now
 
 TASK_HANDOFF_OPEN = "<task_handoff>"
 TASK_HANDOFF_CLOSE = "</task_handoff>"
@@ -25,19 +26,26 @@ def save_task_handoff(
     session_id: int,
     handoff: str,
 ) -> Message | None:
-    """Persist a task lifecycle handoff as hidden agent-visible context.
+    """Persist a task lifecycle handoff as a hidden main-chat event.
 
     The row is a valid ModelRequest containing only a SystemPromptPart,
-    so normal UI rendering hides it. It is the task-terminal *event*: the
-    main session drains it into a synthetic user-role report on its next
-    turn (`app.chat.events`).
+    so normal UI rendering hides it. It is stamped compacted immediately:
+    the main session still drains it as a task-terminal event
+    (`app.chat.events`), but the task agent's future live-history loads
+    do not replay internal handoff bookkeeping as conversation context.
     """
     text = (handoff or "").strip()
     if not text:
         return None
     message = ModelRequest(parts=[SystemPromptPart(content=format_task_handoff(text))])
     rows = save_new_messages(session, session_id, [message], publish=False)
-    return rows[0] if rows else None
+    if not rows:
+        return None
+    row = rows[0]
+    row.compacted_at = utc_now()
+    session.commit()
+    session.refresh(row)
+    return row
 
 
 def extract_task_handoff_text(content: str) -> str | None:

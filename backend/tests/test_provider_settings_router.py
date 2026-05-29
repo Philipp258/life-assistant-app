@@ -125,12 +125,16 @@ def test_import_codex_server_auth_round_trip(
 ) -> None:
     from app.provider_settings import codex_server_auth
 
-    async def _load_server_session() -> CodexSession:
+    seen_force_refresh: list[bool | None] = []
+
+    async def _load_server_session(*, force_refresh: bool | None = None) -> CodexSession:
+        seen_force_refresh.append(force_refresh)
         return _codex_session()
 
     monkeypatch.setattr(codex_server_auth, "load_server_session", _load_server_session)
     r = client.post("/api/settings/providers/codex/import-server-auth")
     assert r.status_code == 200
+    assert seen_force_refresh == [False]
     assert r.json()["codex"] == {"configured": True, "chat_model": None}
     assert "access-token-secret" not in r.text
     assert "refresh-token-secret" not in r.text

@@ -126,6 +126,25 @@ def test_main_prompt_explains_task_coordination_from_main_chat(_test_db, skills_
     assert "Task chats report back through lifecycle handoffs" in prompt
 
 
+def test_main_prompt_routes_explicit_self_improvement_requests(_test_db, skills_dir: Path):
+    from app.chat.service import get_or_create_main_session
+
+    Session = _test_db
+    with Session() as s:
+        main = get_or_create_main_session(s)
+        sid = main.id
+
+    prompt = _build_prompt(sid)
+
+    assert "Self-improvement only runs when" in prompt
+    assert "asks to treat something as an improvement" in prompt
+    assert "create an assistant task with `labels=['improve-life-assistant']`" in prompt
+    assert "hand off with `ask_user_choice`" in prompt
+    assert "learn from a correction" not in prompt
+    assert "Other feedback stays in the current conversation" in prompt
+    assert "routine improvement jobs review recent activity" in prompt
+
+
 def test_shared_app_context_appears_before_main_chat_role(_test_db, skills_dir: Path):
     from app.chat.service import get_or_create_main_session
 
