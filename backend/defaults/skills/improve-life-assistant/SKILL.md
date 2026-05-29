@@ -43,6 +43,15 @@ useful future signal, so name what you suspected and why.
 
 ## Action for behavior / user-fact / skill / knowledge
 
+If the latest user message answers a previous `ask_user_choice`, handle
+that answer before proposing anything new:
+
+- Apply / yes: make exactly the approved write, then call `complete_task`.
+- Revise / custom wording: draft the revised exact change and ask again.
+- Skip / no: call `complete_task` with a short note that no change was made.
+
+Never ask the same approval question twice.
+
 Read the current state of the surface you picked. Draft the actual change
 and show it to the user concretely — a diff or the exact new wording, not a
 paraphrase.

@@ -88,5 +88,13 @@ def test_approval_before_persistence(skill_text: str) -> None:
         assert tool_name in skill_text
 
 
+def test_approval_reply_is_handled_before_reasking(skill_text: str) -> None:
+    lowered = skill_text.lower()
+    assert "latest user message answers a previous `ask_user_choice`" in skill_text
+    assert "never ask the same approval question twice" in lowered
+    assert "make exactly the approved write" in lowered
+    assert "complete_task" in skill_text
+
+
 def test_no_sibling_tasks(skill_text: str) -> None:
     assert "Don't spawn sibling tasks" in skill_text
