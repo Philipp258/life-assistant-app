@@ -23,6 +23,7 @@ from pydantic_ai.messages import (
     TextPart,
     TextPartDelta,
     ToolReturnPart,
+    UserPromptPart,
 )
 from pydantic_graph.nodes import End
 
@@ -95,6 +96,35 @@ def _stop_after_terminal_task_boundary(
         return False
     logger.info("runner: ending task %d turn after terminal tool return", task_id)
     return True
+
+
+def _extract_latest_text_user_prompt(
+    history: list[ModelMessage],
+) -> tuple[list[ModelMessage], str | None]:
+    """Move the latest persisted text user prompt into Agent.iter input.
+
+    pydantic-ai treats a history tail after a previous tool call as a
+    continuation of that graph. For turn-based task replies, the latest
+    persisted user row is the new prompt; passing it explicitly lets the
+    model answer it instead of replaying the prior tool-return request.
+    """
+    if not history:
+        return history, None
+    last = history[-1]
+    if not isinstance(last, ModelRequest):
+        return history, None
+    user_parts = [part for part in last.parts if isinstance(part, UserPromptPart)]
+    if not user_parts:
+        return history, None
+    if any(not isinstance(part.content, str) for part in user_parts):
+        return history, None
+
+    remaining_parts = [part for part in last.parts if not isinstance(part, UserPromptPart)]
+    trimmed = list(history[:-1])
+    if remaining_parts:
+        trimmed.append(last.model_copy(update={"parts": remaining_parts}))
+    prompt = "\n\n".join(str(part.content) for part in user_parts).strip()
+    return trimmed, prompt or None
 
 
 async def run_session_turn(session_id: int, run_id: str = "") -> int:
@@ -173,6 +203,10 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
     # wake (no real user message) a valid request and a clear triage
     # target; the model replies or calls `do_nothing` (silence).
     history = history + injected
+
+    user_prompt: str | None = None
+    if kind == "task" and task is not None and task.assignee == "user":
+        history, user_prompt = _extract_latest_text_user_prompt(history)
 
     agent = get_agent()
     voice = _pending_voice.pop(session_id, False)
@@ -294,6 +328,8 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
         deps=AgentDeps(session_id=session_id, voice_mode=voice),
         usage_limits=default_usage_limits(),
     )
+    if user_prompt is not None:
+        iter_kwargs["user_prompt"] = user_prompt
     if seen:
         # Drain turns only: offer the terminating `do_nothing` output
         # tool. Calling it ends the run (pydantic-ai output-tool
@@ -346,9 +382,32 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
 
     async with agent.iter(**iter_kwargs) as agent_run:
         final_messages: list[ModelMessage] = []
+        skipped_persisted_request_prefix = False
+
+        def _skip_persisted_request_prefix(messages: list[ModelMessage]) -> None:
+            nonlocal persisted_count, skipped_persisted_request_prefix
+            if skipped_persisted_request_prefix or defer_persist or kind != "task":
+                return
+            if not messages:
+                return
+            skipped_persisted_request_prefix = True
+            prefix_count = 0
+            for message in messages:
+                if not isinstance(message, ModelRequest):
+                    break
+                prefix_count += 1
+            if prefix_count:
+                # pydantic-ai can surface the already-persisted request tail
+                # (for example a prior tool return plus the user's latest
+                # answer) in new_messages() before the next model step. Do
+                # not write that tail again; doing so makes the stale-input
+                # guard see our own duplicate user message and abort the turn.
+                persisted_count = prefix_count
+
         try:
             async for node in agent_run:
                 messages = list(agent_run.new_messages())
+                _skip_persisted_request_prefix(messages)
                 _flush(messages)
                 if _stop_for_stale_task_input(node):
                     restart_for_stale_input = True
@@ -363,6 +422,7 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
                 if stream_model_requests and Agent.is_model_request_node(node):
                     await _stream_text(node)
                 messages = list(agent_run.new_messages())
+                _skip_persisted_request_prefix(messages)
                 _flush(messages)
                 if _stop_for_stale_task_input(node):
                     restart_for_stale_input = True
