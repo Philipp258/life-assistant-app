@@ -63,12 +63,10 @@ Use the abstraction ladder:
 
 raw case -> narrow rule -> broader principle -> intent / role
 
-Think across the ladder before proposing anything. The useful learning is
-usually not the raw incident itself; it is the level that would have
-prevented the miss without overfitting one moment. A narrow rule can be
-right when the user asked for one. A broader principle is better when it
-captures the judgment behind several possible cases. A role-level shift
-needs stronger evidence than one isolated failure.
+Think across the ladder before proposing anything. It is not a scoring
+rubric; it is a way to notice options. Sometimes the useful move is one
+suggested lesson. Sometimes it is better to show the user a few possible
+framings at different levels and ask which one feels right.
 
 ## User-facing review
 

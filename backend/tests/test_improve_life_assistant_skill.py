@@ -109,10 +109,9 @@ def test_abstraction_ladder_guards_against_overfitting(skill_text: str) -> None:
     assert "use the abstraction ladder" in lowered
     assert "raw case -> narrow rule -> broader principle -> intent / role" in lowered
     assert "think across the ladder" in lowered
-    assert "without overfitting one moment" in collapsed
-    assert "a narrow rule can be right" in collapsed
-    assert "a broader principle is better" in collapsed
-    assert "a role-level shift" in collapsed
+    assert "not a scoring rubric" in collapsed
+    assert "a way to notice options" in lowered
+    assert "a few possible framings at different levels" in collapsed
 
 
 def test_skill_avoids_canned_learning_examples(skill_text: str) -> None:
