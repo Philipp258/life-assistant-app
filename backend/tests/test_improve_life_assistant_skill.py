@@ -82,29 +82,29 @@ def test_exact_wording_before_apply(skill_text: str) -> None:
     """The skill should ask for exact proposed wording, not a paraphrase."""
     lowered = skill_text.lower()
     collapsed = " ".join(lowered.split())
-    assert "exact wording that would be remembered" in collapsed
+    assert "exact wording that would be saved" in collapsed
     assert "not a paraphrase" in lowered
 
 
-def test_user_facing_review_is_plain_and_non_technical(skill_text: str) -> None:
+def test_user_facing_review_is_conversational(skill_text: str) -> None:
     lowered = skill_text.lower()
     assert "## User-facing review" in skill_text
-    assert "small learning review" in skill_text
-    assert "I think the useful lesson is" in skill_text
-    assert "Do not expose class names" in skill_text
-    assert "do not mention tool names" in lowered
-    assert "file paths" in skill_text
-    assert "diffs unless" in skill_text
+    assert "normal conversation" in lowered
+    assert "use easy language" in lowered
+    assert "it is fine to name app concepts" in lowered
+    assert "memory, knowledge, skills, tasks, or app bugs" in lowered
+    assert "internal taxonomy" in lowered
+    assert "mechanical checklist" in lowered
 
 
 def test_review_move_allows_judgment_instead_of_forced_proposals(skill_text: str) -> None:
     lowered = skill_text.lower()
     collapsed = " ".join(lowered.split())
     assert "the goal is not to produce a memory edit" in collapsed
-    assert "if no durable change clearly follows" in lowered
-    assert "ask one focused question" in lowered
-    assert "lead with your best proposed wording" in lowered
-    assert "narrower or broader alternative only when that choice is real" in lowered
+    assert "choose the next move with judgment" in lowered
+    assert "no durable change follows" in lowered
+    assert "one focused question" in lowered
+    assert "approve, revise, or skip" in lowered
 
 
 def test_abstraction_ladder_guards_against_overfitting(skill_text: str) -> None:

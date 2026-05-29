@@ -55,10 +55,9 @@ that answer before proposing anything new:
 
 Never ask the same approval question twice.
 
-Read the current state of the surface you picked, but keep that plumbing out
-of the visible review unless the user asks. The goal is not to produce a
-memory edit; the goal is to reduce the chance that this failure happens
-again.
+Read the current state of the surface you picked. The goal is not to
+produce a memory edit; the goal is to reduce the chance that this failure
+happens again.
 
 Use the abstraction ladder:
 
@@ -70,28 +69,21 @@ rule. Avoid broad personality changes unless several cases support them.
 
 ## User-facing review
 
-The visible moment should feel like a small learning review, not a technical
-maintenance task. Use plain language such as "I think the useful lesson is..."
-or "The pattern I would remember is...". Include brief context only when it
-helps the user recognize the moment.
+The visible moment should feel like a normal conversation about what the
+assistant should learn. Use easy language. It is fine to name app concepts
+like memory, knowledge, skills, tasks, or app bugs when that helps the user
+understand the choice; just don't make the user read your internal taxonomy
+or a mechanical checklist.
 
-Do not expose class names like `behavior`, `user-fact`, `skill`, or
-`knowledge`, and do not mention tool names, file paths, or diffs unless the
-user is explicitly reviewing a knowledge or skill edit where exact stored
-wording matters.
+Choose the next move with judgment. Sometimes the right answer is to close
+the task with a short rationale because no durable change follows. Sometimes
+the right answer is one focused question because the evidence is promising
+but underspecified. Sometimes the right answer is a concrete proposal the
+user can approve, revise, or skip.
 
-Choose the review move with judgment:
-
-- If no durable change clearly follows, complete the task with a short
-  rationale instead of asking the user to approve noise.
-- If the evidence is promising but underspecified, ask one focused question
-  instead of inventing a rule.
-- If a clear lesson exists, lead with your best proposed wording. Offer a
-  narrower or broader alternative only when that choice is real.
-
-Keep the `ask_user_choice` question and option labels short. Show the exact
-wording that would be remembered, not a paraphrase. Then call
-`ask_user_choice` and stop.
+If you propose a durable write, show the exact wording that would be saved,
+not a paraphrase. Keep the `ask_user_choice` question and options short and
+clear. Then call `ask_user_choice` and stop.
 
 Do not call `save_core_memory`, `save_knowledge`, `write_file`, or
 `edit_file` in the same run that asks. Only after the user later chooses a
