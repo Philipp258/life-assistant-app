@@ -78,12 +78,11 @@ def test_default_skill_reroutes_to_app_prompt(skill_text: str) -> None:
     assert "app-prompt" in skill_text
 
 
-def test_exact_wording_before_apply(skill_text: str) -> None:
-    """The skill should ask for exact proposed wording, not a paraphrase."""
+def test_approval_before_durable_change_is_stated_plainly(skill_text: str) -> None:
     lowered = skill_text.lower()
     collapsed = " ".join(lowered.split())
-    assert "exact wording that would be saved" in collapsed
-    assert "not a paraphrase" in lowered
+    assert "propose first; write only after approval" in lowered
+    assert "ask for approval before applying it" in collapsed
 
 
 def test_user_facing_review_is_conversational(skill_text: str) -> None:
@@ -109,9 +108,11 @@ def test_abstraction_ladder_guards_against_overfitting(skill_text: str) -> None:
     collapsed = " ".join(lowered.split())
     assert "use the abstraction ladder" in lowered
     assert "raw case -> narrow rule -> broader principle -> intent / role" in lowered
-    assert "without overfitting one incident" in collapsed
-    assert "avoid raw-case rules" in lowered
-    assert "avoid broad personality changes" in lowered
+    assert "think across the ladder" in lowered
+    assert "without overfitting one moment" in collapsed
+    assert "a narrow rule can be right" in collapsed
+    assert "a broader principle is better" in collapsed
+    assert "a role-level shift" in collapsed
 
 
 def test_skill_avoids_canned_learning_examples(skill_text: str) -> None:
@@ -123,20 +124,20 @@ def test_skill_avoids_canned_learning_examples(skill_text: str) -> None:
 
 
 def test_approval_before_persistence(skill_text: str) -> None:
-    """The skill must hand off for approval before any persistent write."""
+    """The skill must preserve approval before persistent writes without
+    spelling out every persistence tool."""
     lowered = skill_text.lower()
     assert "ask_user_choice" in skill_text
-    assert "stop" in lowered
-    assert "only after the user later chooses" in lowered
+    assert "approval before applying" in lowered
     for tool_name in ("save_core_memory", "save_knowledge", "write_file", "edit_file"):
-        assert tool_name in skill_text
+        assert tool_name not in skill_text
 
 
 def test_approval_reply_is_handled_before_reasking(skill_text: str) -> None:
     lowered = skill_text.lower()
     assert "latest user message answers a previous `ask_user_choice`" in skill_text
     assert "never ask the same approval question twice" in lowered
-    assert "make exactly the approved write" in lowered
+    assert "make the approved change" in lowered
     assert "complete_task" in skill_text
 
 
