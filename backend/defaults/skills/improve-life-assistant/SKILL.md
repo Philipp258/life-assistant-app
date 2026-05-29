@@ -48,29 +48,55 @@ is useful future signal, so name what you suspected and why.
 If the latest user message answers a previous `ask_user_choice`, handle
 that answer before proposing anything new:
 
-- Apply / yes: make exactly the approved write, then call `complete_task`.
+- Apply / yes / chosen alternative: make exactly the approved write, then
+  call `complete_task`.
 - Revise / custom wording: draft the revised exact change and ask again.
 - Skip / no: call `complete_task` with a short note that no change was made.
 
 Never ask the same approval question twice.
 
-Read the current state of the surface you picked. Draft the actual change
-and show it to the user concretely — a diff or the exact new wording, not a
-paraphrase.
+Read the current state of the surface you picked, but keep that plumbing out
+of the visible review unless the user asks. The goal is not to produce a
+memory edit; the goal is to reduce the chance that this failure happens
+again.
 
-Evidence is concrete; the change usually shouldn't be. The default failure
-mode — and the thing that makes the assistant brittle over time — is
-encoding the specific case as a narrow rule ("don't suggest fish") instead
-of the principle behind it ("I prefer lighter meals"). By default, offer a
-few phrasings at different points on the ladder — raw incident → rule →
-principle → persona-level shift — and let the user pick. Drop levels that
-obviously don't fit; collapse to one option only when the others genuinely
-make no sense.
+Use the abstraction ladder:
 
-Then call `ask_user_choice` with options to apply, revise, or skip, and
-stop. Do not call `save_core_memory`, `save_knowledge`, `write_file`, or
-`edit_file` in the same run that asks. Only after the user later chooses
-apply should you make the approved write. Drop on no, revise on edit.
+raw case -> narrow rule -> broader principle -> intent / role
+
+Pick the level that would have prevented the miss without overfitting one
+incident. Avoid raw-case rules unless the user clearly wanted a specific
+rule. Avoid broad personality changes unless several cases support them.
+
+## User-facing review
+
+The visible moment should feel like a small learning review, not a technical
+maintenance task. Use plain language such as "I think the useful lesson is..."
+or "The pattern I would remember is...". Include brief context only when it
+helps the user recognize the moment.
+
+Do not expose class names like `behavior`, `user-fact`, `skill`, or
+`knowledge`, and do not mention tool names, file paths, or diffs unless the
+user is explicitly reviewing a knowledge or skill edit where exact stored
+wording matters.
+
+Choose the review move with judgment:
+
+- If no durable change clearly follows, complete the task with a short
+  rationale instead of asking the user to approve noise.
+- If the evidence is promising but underspecified, ask one focused question
+  instead of inventing a rule.
+- If a clear lesson exists, lead with your best proposed wording. Offer a
+  narrower or broader alternative only when that choice is real.
+
+Keep the `ask_user_choice` question and option labels short. Show the exact
+wording that would be remembered, not a paraphrase. Then call
+`ask_user_choice` and stop.
+
+Do not call `save_core_memory`, `save_knowledge`, `write_file`, or
+`edit_file` in the same run that asks. Only after the user later chooses a
+concrete option should you make the approved write. Drop on no, revise on
+edit.
 
 When editing a skill or knowledge note, write for the runtime assistant who
 will read it later — "you" means that assistant inside the app, not the

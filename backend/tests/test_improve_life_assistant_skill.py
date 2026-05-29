@@ -3,7 +3,8 @@
 The skill is the per-task action prompt for spawned improvement items.
 A drift here changes how every improvement task behaves, so the shape —
 classify-first into the named class set, app classes acknowledged, closing
-path that doesn't surface, approval before write — is asserted in code.
+path that doesn't surface, conversational review, approval before write —
+is asserted in code.
 """
 
 from __future__ import annotations
@@ -77,12 +78,51 @@ def test_default_skill_reroutes_to_app_prompt(skill_text: str) -> None:
     assert "app-prompt" in skill_text
 
 
-def test_concrete_change_before_apply(skill_text: str) -> None:
-    """The skill should ask for a concrete change (diff / exact wording),
-    not a paraphrase, before user approval."""
+def test_exact_wording_before_apply(skill_text: str) -> None:
+    """The skill should ask for exact proposed wording, not a paraphrase."""
     lowered = skill_text.lower()
-    assert "diff" in lowered
-    assert "not a paraphrase" in lowered or "exact" in lowered
+    collapsed = " ".join(lowered.split())
+    assert "exact wording that would be remembered" in collapsed
+    assert "not a paraphrase" in lowered
+
+
+def test_user_facing_review_is_plain_and_non_technical(skill_text: str) -> None:
+    lowered = skill_text.lower()
+    assert "## User-facing review" in skill_text
+    assert "small learning review" in skill_text
+    assert "I think the useful lesson is" in skill_text
+    assert "Do not expose class names" in skill_text
+    assert "do not mention tool names" in lowered
+    assert "file paths" in skill_text
+    assert "diffs unless" in skill_text
+
+
+def test_review_move_allows_judgment_instead_of_forced_proposals(skill_text: str) -> None:
+    lowered = skill_text.lower()
+    collapsed = " ".join(lowered.split())
+    assert "the goal is not to produce a memory edit" in collapsed
+    assert "if no durable change clearly follows" in lowered
+    assert "ask one focused question" in lowered
+    assert "lead with your best proposed wording" in lowered
+    assert "narrower or broader alternative only when that choice is real" in lowered
+
+
+def test_abstraction_ladder_guards_against_overfitting(skill_text: str) -> None:
+    lowered = skill_text.lower()
+    collapsed = " ".join(lowered.split())
+    assert "use the abstraction ladder" in lowered
+    assert "raw case -> narrow rule -> broader principle -> intent / role" in lowered
+    assert "without overfitting one incident" in collapsed
+    assert "avoid raw-case rules" in lowered
+    assert "avoid broad personality changes" in lowered
+
+
+def test_skill_avoids_canned_learning_examples(skill_text: str) -> None:
+    lowered = skill_text.lower()
+    assert "examples:" not in lowered
+    assert "missed recommendation" not in lowered
+    assert "recipe feedback" not in lowered
+    assert "tone/style preference" not in lowered
 
 
 def test_approval_before_persistence(skill_text: str) -> None:
