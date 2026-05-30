@@ -20,7 +20,7 @@ from app.datetime_utils import utc_now
 from app.db import Base
 
 if TYPE_CHECKING:
-    from app.labels.models import Label
+    from app.goals.models import Goal
 
 IntervalUnit = Literal["hour", "day", "week"]
 Assignee = Literal["user", "assistant"]
@@ -68,6 +68,11 @@ class Task(Base):
     chat_session_id: Mapped[int] = mapped_column(
         ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False
     )
+    goal_id: Mapped[int | None] = mapped_column(
+        ForeignKey("goals.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     do_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     due_notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -84,14 +89,9 @@ class Task(Base):
     # on them.
     task_log_line: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
-    # Labels attached to this task (many-to-many via task_labels).
-    # String target + secondary table name keeps this import-cycle-safe;
-    # the Label class is loaded by alembic env / conftest before any
-    # query touches the relationship.
-    labels: Mapped[list[Label]] = relationship(
-        "Label",
-        secondary="task_labels",
-        order_by="Label.name",
+    goal: Mapped[Goal | None] = relationship(
+        "Goal",
+        back_populates="tasks",
         lazy="selectin",
     )
 

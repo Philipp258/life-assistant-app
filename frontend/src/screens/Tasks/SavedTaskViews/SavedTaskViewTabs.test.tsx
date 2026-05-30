@@ -15,9 +15,9 @@ const views = [
   },
   {
     id: 2,
-    name: "Home",
-    icon: "🏠",
-    filters: { labels: ["home"] },
+    name: "Mine",
+    icon: "👤",
+    filters: { assignee: "user" as const },
     group_by: "none" as const,
     sort_index: 1,
     is_default: false,
@@ -40,7 +40,7 @@ describe("SavedTaskViewTabs", () => {
       />,
     );
     expect(screen.getByText("Today")).toBeInTheDocument();
-    expect(screen.getByText("Home")).toBeInTheDocument();
+    expect(screen.getByText("Mine")).toBeInTheDocument();
   });
 
   it("clicking inactive tab calls onSelect", () => {
@@ -58,7 +58,7 @@ describe("SavedTaskViewTabs", () => {
         onAdd={() => {}}
       />,
     );
-    fireEvent.click(screen.getByText("Home"));
+    fireEvent.click(screen.getByText("Mine"));
     expect(onSelect).toHaveBeenCalledWith(2);
   });
 

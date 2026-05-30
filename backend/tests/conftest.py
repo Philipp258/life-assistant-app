@@ -198,7 +198,7 @@ def _test_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     # Register every model so create_all covers them.
     from app.chat import models as _chat_models  # noqa: F401
     from app.defaults import models as _defaults_models  # noqa: F401
-    from app.labels import models as _labels_models  # noqa: F401
+    from app.goals import models as _goals_models  # noqa: F401
     from app.notifications import models as _notif_models  # noqa: F401
     from app.provider_settings import models as _provider_settings_models  # noqa: F401
     from app.saved_task_views import models as _saved_task_views_models  # noqa: F401
@@ -274,9 +274,9 @@ def _test_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(tasks_router_mod, "SessionLocal", TestSession, raising=True)
 
-    from app.labels import router as labels_router_mod
+    from app.goals import router as goals_router_mod
 
-    monkeypatch.setattr(labels_router_mod, "SessionLocal", TestSession, raising=True)
+    monkeypatch.setattr(goals_router_mod, "SessionLocal", TestSession, raising=True)
 
     from app.saved_task_views import router as saved_task_views_router_mod
 
@@ -285,6 +285,10 @@ def _test_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from app.agent.tools import tasks as tasks_tools_mod
 
     monkeypatch.setattr(tasks_tools_mod, "SessionLocal", TestSession, raising=True)
+
+    from app.agent.tools import goals as goals_tools_mod
+
+    monkeypatch.setattr(goals_tools_mod, "SessionLocal", TestSession, raising=True)
 
     from app.chat import router as chat_router_mod
 

@@ -18,9 +18,9 @@ describe("savedTaskViewsApi", () => {
     const mock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ id: 5, name: "x" }), { status: 201 }),
     );
-    await createView({ name: "x", filters: { labels: ["home"] }, group_by: "none" });
+    await createView({ name: "x", filters: { assignee: "user" }, group_by: "none" });
     const call = mock.mock.calls[0]!;
-    expect(JSON.parse((call[1] as RequestInit).body as string).filters.labels).toEqual(["home"]);
+    expect(JSON.parse((call[1] as RequestInit).body as string).filters.assignee).toBe("user");
   });
 
   it("updateView patches", async () => {

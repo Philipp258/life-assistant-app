@@ -16,7 +16,7 @@ which would wake the routine immediately at first boot.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 
 from sqlalchemy import select
@@ -24,7 +24,6 @@ from sqlalchemy.orm import Session
 
 from app.defaults.models import SeededDefault
 from app.datetime_utils import utc_now
-from app.labels.models import Label
 from app.tasks.models import IntervalUnit, Task
 from app.tasks.schemas import TaskCreate
 from app.tasks.service import create_task
@@ -70,8 +69,8 @@ already shared. Skip routine work and anything already captured; check \
 existing improvement items, including resolved ones, before creating new \
 ones.
 
-For each genuine opportunity, create an assistant-owned improvement task \
-with `labels=['improve-life-assistant']`. Its description must stand \
+For each genuine opportunity, create an assistant-owned improvement task. \
+Its description must stand \
 alone: what happened, what was off, and why it matters. Avoid speculative \
 or vague "could be nicer" items.
 
@@ -170,7 +169,6 @@ class RoutineSpec:
     interval_count: int
     # now -> first do_at (future, so the routine doesn't wake at boot).
     schedule: Callable[[datetime], datetime]
-    labels: tuple[str, ...] = field(default_factory=tuple)
 
 
 # Cadence/time mirrors the old seed migrations where still relevant:
@@ -199,7 +197,6 @@ DEFAULT_ROUTINES: tuple[RoutineSpec, ...] = (
         interval_unit="week",
         interval_count=1,
         schedule=lambda now: _next_weekday_at(now, weekday=0, hour=10),
-        labels=("inbox",),
     ),
     RoutineSpec(
         key="task-log-maintenance",
@@ -259,7 +256,6 @@ def ensure_default_routines(db: Session) -> list[str]:
 
     Returns the titles created this call (empty once everything exists).
     """
-    known_label_slugs = set(db.scalars(select(Label.slug)))
     created: list[str] = []
     for spec in DEFAULT_ROUTINES:
         if _default_was_materialized(db, spec):
@@ -267,9 +263,6 @@ def ensure_default_routines(db: Session) -> list[str]:
         if legacy := _find_legacy_routine(db, spec):
             _record_materialized(db, spec, legacy.id)
             continue
-        # `_resolve_labels` raises on an unknown slug; the old disk-space
-        # seed only attached `inbox` when that label existed, so filter.
-        labels = [s for s in spec.labels if s in known_label_slugs]
         task = create_task(
             db,
             TaskCreate(
@@ -279,7 +272,6 @@ def ensure_default_routines(db: Session) -> list[str]:
                 do_at=spec.schedule(utc_now()),
                 interval_unit=spec.interval_unit,
                 interval_count=spec.interval_count,
-                labels=labels,
             ),
         )
         _record_materialized(db, spec, task.id)

@@ -69,7 +69,6 @@ def _summarize(
         "title": read.title,
         "is_done": read.is_done,
         "assignee": read.assignee,
-        "labels": read.labels,
         "state": read.state,
         "kind": read.kind,
         "do_at": serialize_utc(read.do_at),
@@ -77,6 +76,8 @@ def _summarize(
         "interval_unit": read.interval_unit,
         "interval_count": read.interval_count,
         "chat_session_id": read.chat_session_id,
+        "goal_id": read.goal_id,
+        "goal_title": read.goal_title,
         "completed_at": serialize_utc(read.completed_at),
     }
     if include_description:
@@ -94,11 +95,11 @@ def do_create_task(
     title: str,
     description: str | None = None,
     assignee: Assignee = "assistant",
-    labels: list[str] | None = None,
     do_at: datetime | None = None,
     due_at: datetime | None = None,
     interval_unit: IntervalUnit | None = None,
     interval_count: int | None = None,
+    goal_id: int | None = None,
 ) -> dict[str, Any]:
     # Ergonomics: if a unit was supplied but count wasn't, assume 1.
     if interval_unit is not None and interval_count is None:
@@ -107,11 +108,11 @@ def do_create_task(
         title=title,
         description=description,
         assignee=assignee,
-        labels=labels or [],
         do_at=do_at,
         due_at=due_at,
         interval_unit=interval_unit,
         interval_count=interval_count,
+        goal_id=goal_id,
     )
     with SessionLocal() as session:
         try:
@@ -130,7 +131,7 @@ LIST_TASKS_PAGE_MAX = 200
 def do_list_tasks(
     is_done: bool | None = None,
     assignee: Assignee | None = None,
-    labels: list[str] | None = None,
+    goal_id: int | None = None,
     since: datetime | None = None,
     title: str | None = None,
     offset: int = 0,
@@ -140,20 +141,16 @@ def do_list_tasks(
     # with `Z` / offset as aware), while DB timestamps are naive UTC.
     # Coerce to the naive-UTC shape so the comparison below never mixes.
     since_naive = normalize_to_naive_utc(since)
-    label_filter = set(labels) if labels else None
     with SessionLocal() as session:
         rows = service.list_tasks_with_activity(session)
-        # Snapshot label slugs while the session is still open so we can
-        # filter outside the session without triggering detached-instance
-        # lazy loads.
-        items = [(t, activity, {label.slug for label in t.labels}) for t, activity in rows]
+        items = list(rows)
     title_match = title.lower() if title else None
     matched = [
         _summarize(t, last_activity_at=activity, include_description=False)
-        for t, activity, task_labels in items
+        for t, activity in items
         if (is_done is None or t.is_done == is_done)
         and (assignee is None or t.assignee == assignee)
-        and (label_filter is None or task_labels & label_filter)
+        and (goal_id is None or t.goal_id == goal_id)
         and (since_naive is None or activity >= since_naive)
         and (title_match is None or title_match in t.title.lower())
     ]
@@ -197,11 +194,11 @@ def do_update_task(
     description: str | None | _UnsetType = _UNSET,
     is_done: bool | _UnsetType = _UNSET,
     assignee: Assignee | _UnsetType = _UNSET,
-    labels: list[str] | _UnsetType = _UNSET,
     do_at: datetime | None | _UnsetType = _UNSET,
     due_at: datetime | None | _UnsetType = _UNSET,
     interval_unit: IntervalUnit | None | _UnsetType = _UNSET,
     interval_count: int | None | _UnsetType = _UNSET,
+    goal_id: int | None | _UnsetType = _UNSET,
 ) -> dict[str, Any]:
     fields: dict[str, Any] = {}
     if not isinstance(title, _UnsetType):
@@ -212,8 +209,6 @@ def do_update_task(
         fields["is_done"] = is_done
     if not isinstance(assignee, _UnsetType):
         fields["assignee"] = assignee
-    if not isinstance(labels, _UnsetType):
-        fields["labels"] = labels
     if not isinstance(do_at, _UnsetType):
         fields["do_at"] = do_at
     if not isinstance(due_at, _UnsetType):
@@ -222,6 +217,8 @@ def do_update_task(
         fields["interval_unit"] = interval_unit
     if not isinstance(interval_count, _UnsetType):
         fields["interval_count"] = interval_count
+    if not isinstance(goal_id, _UnsetType):
+        fields["goal_id"] = goal_id
     if not fields:
         return {
             "error": "update_task requires at least one field to change",
@@ -373,15 +370,16 @@ def _update_task_tool_kwargs(
     description: str | None = None,
     is_done: bool | None = None,
     assignee: Assignee | None = None,
-    labels: list[str] | None = None,
     do_at: datetime | None = None,
     due_at: datetime | None = None,
     interval_unit: IntervalUnit | None = None,
     interval_count: int | None = None,
+    goal_id: int | None = None,
     clear_description: bool = False,
     clear_do_at: bool = False,
     clear_due_at: bool = False,
     clear_recurrence: bool = False,
+    clear_goal: bool = False,
 ) -> dict[str, Any]:
     if clear_description and description is not None:
         raise ValueError("pass either description or clear_description, not both")
@@ -391,6 +389,8 @@ def _update_task_tool_kwargs(
         raise ValueError("pass either due_at or clear_due_at, not both")
     if clear_recurrence and (interval_unit is not None or interval_count is not None):
         raise ValueError("pass either recurrence fields or clear_recurrence, not both")
+    if clear_goal and goal_id is not None:
+        raise ValueError("pass either goal_id or clear_goal, not both")
 
     kwargs: dict[str, Any] = {}
     if title is not None:
@@ -403,8 +403,6 @@ def _update_task_tool_kwargs(
         kwargs["is_done"] = is_done
     if assignee is not None:
         kwargs["assignee"] = assignee
-    if labels is not None:
-        kwargs["labels"] = labels
     if do_at is not None:
         kwargs["do_at"] = do_at
     elif clear_do_at:
@@ -421,6 +419,10 @@ def _update_task_tool_kwargs(
             kwargs["interval_unit"] = interval_unit
         if interval_count is not None:
             kwargs["interval_count"] = interval_count
+    if goal_id is not None:
+        kwargs["goal_id"] = goal_id
+    elif clear_goal:
+        kwargs["goal_id"] = None
     return kwargs
 
 
@@ -442,11 +444,11 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
         title: str,
         assignee: Assignee,
         description: str | None = None,
-        labels: list[str] | None = None,
         do_at: datetime | None = None,
         due_at: datetime | None = None,
         interval_unit: IntervalUnit | None = None,
         interval_count: int | None = None,
+        goal_id: int | None = None,
     ) -> dict[str, Any]:
         """Create a new task.
 
@@ -457,8 +459,6 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
         Markdown for structure (lists, links, code, headings) when helpful.
 
         Field semantics:
-        - `labels` (optional list of slugs): tags applied to the task.
-          Unknown slugs cause the call to error.
         - `do_at` (ISO datetime): START trigger. The autonomous runner
           wakes an assistant-assigned task only once `do_at <= now`.
         - `due_at` (ISO datetime): DEADLINE. User-facing only — the
@@ -466,23 +466,25 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
         - `interval_unit` ('hour'|'day'|'week') + `interval_count` (>=1):
           recurrence. Pass both together. Pass `do_at` alongside to
           anchor the first run.
+        - `goal_id`: optional parent goal. Use it when the task is a
+          concrete next step under a long-lived outcome.
         """
         return do_create_task(
             title=title,
             description=description,
             assignee=assignee,
-            labels=labels,
             do_at=do_at,
             due_at=due_at,
             interval_unit=interval_unit,
             interval_count=interval_count,
+            goal_id=goal_id,
         )
 
     @agent.tool_plain
     def list_tasks(
         is_done: bool | None = None,
         assignee: Assignee | None = None,
-        labels: list[str] | None = None,
+        goal_id: int | None = None,
         since: datetime | None = None,
         title: str | None = None,
         offset: int = 0,
@@ -492,8 +494,7 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
 
         - `is_done`: only completed (True) or only open (False).
         - `assignee`: 'user' or 'assistant'.
-        - `labels`: only tasks carrying at least one of these label slugs
-          (OR semantics). Unknown slugs are silently ignored.
+        - `goal_id`: only tasks attached to that goal.
         - `since`: only tasks with activity at or after this timestamp.
           Activity = the later of the task's last update or the most
           recent message in its chat session. Useful for "what's
@@ -516,7 +517,7 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
         return do_list_tasks(
             is_done=is_done,
             assignee=assignee,
-            labels=labels,
+            goal_id=goal_id,
             since=since,
             title=title,
             offset=offset,
@@ -543,21 +544,21 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
         description: str | None = None,
         is_done: bool | None = None,
         assignee: Assignee | None = None,
-        labels: list[str] | None = None,
         do_at: datetime | None = None,
         due_at: datetime | None = None,
         interval_unit: IntervalUnit | None = None,
         interval_count: int | None = None,
+        goal_id: int | None = None,
         clear_description: bool = False,
         clear_do_at: bool = False,
         clear_due_at: bool = False,
         clear_recurrence: bool = False,
+        clear_goal: bool = False,
     ) -> dict[str, Any]:
         """Edit fields on an existing task.
 
         Pass only the fields you want to change. Omitted fields are left
-        untouched. `labels`, when passed, REPLACES the task's full label
-        set with the given list of slugs (pass `[]` to drop all labels).
+        untouched.
         Task descriptions are rendered as Markdown in the UI; use concise
         Markdown for structure when helpful. To clear `interval_unit`
         and `interval_count`, pass them together (the schema rejects
@@ -567,7 +568,8 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
         `is_done=False` reopens it. `assignee='assistant'` hands the
         task to the assistant and schedules the autonomous runner when eligible;
         `assignee='user'` pauses assistant work and puts the ball in
-        the user's court.
+        the user's court. Pass `goal_id` to attach the task to a goal;
+        pass `clear_goal=True` to detach it.
 
         From main chat, when the user gives an answer or direction for a
         waiting task, use `relay_to_task(task_id, note)` — it writes the
@@ -582,15 +584,16 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
                 description=description,
                 is_done=is_done,
                 assignee=assignee,
-                labels=labels,
                 do_at=do_at,
                 due_at=due_at,
                 interval_unit=interval_unit,
                 interval_count=interval_count,
+                goal_id=goal_id,
                 clear_description=clear_description,
                 clear_do_at=clear_do_at,
                 clear_due_at=clear_due_at,
                 clear_recurrence=clear_recurrence,
+                clear_goal=clear_goal,
             )
         except ValueError as exc:
             return {"error": str(exc), "task_id": task_id}

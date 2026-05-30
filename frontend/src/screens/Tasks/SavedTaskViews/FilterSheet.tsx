@@ -1,15 +1,12 @@
 import { X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { labelDisplayName } from "@/screens/Labels/labelDisplay";
 
-import type { Label } from "../../Labels/labelsApi";
 import type { FilterBlob } from "../savedTaskViewsApi";
 
 type Props = {
   open: boolean;
   value: FilterBlob;
-  labels: Label[];
   assistantName?: string;
   onChange: (next: FilterBlob) => void;
   onClose: () => void;
@@ -33,7 +30,6 @@ const DUE_OPTIONS: DueOption[] = [
 export function FilterSheet({
   open,
   value,
-  labels,
   assistantName = "Assistant",
   onChange,
   onClose,
@@ -58,13 +54,6 @@ export function FilterSheet({
 
   function setDue(next: DueOption["key"]) {
     onChange({ due: next === "any" ? null : next });
-  }
-
-  function toggleLabel(slug: string) {
-    const set = new Set(value.labels ?? []);
-    if (set.has(slug)) set.delete(slug);
-    else set.add(slug);
-    onChange({ labels: [...set] });
   }
 
   const ownerKey: OwnerOption["key"] = value.assignee ?? "any";
@@ -127,19 +116,6 @@ export function FilterSheet({
                   onClick={() => setDue(option.key)}
                 >
                   {option.label}
-                </Chip>
-              ))}
-            </ChipRow>
-          </Section>
-          <Section title="Labels">
-            <ChipRow>
-              {labels.map((label) => (
-                <Chip
-                  key={label.id}
-                  on={value.labels?.includes(label.slug) ?? false}
-                  onClick={() => toggleLabel(label.slug)}
-                >
-                  {labelDisplayName(label)}
                 </Chip>
               ))}
             </ChipRow>

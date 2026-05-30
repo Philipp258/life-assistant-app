@@ -21,7 +21,6 @@ from app.tasks.default_routines import (
     CONSOLIDATION_TITLE,
     DEFAULT_ROUTINES,
     DISK_SPACE_BRIEF,
-    DISK_SPACE_TITLE,
     TASK_LOG_MAINTENANCE_BRIEF,
     ensure_default_routines,
 )
@@ -200,34 +199,12 @@ def test_seeded_routines_do_not_wake_at_boot(_test_db):
             assert should_start_task(task) is False
 
 
-def test_disk_space_inbox_label_is_optional(_test_db):
-    """`_resolve_labels` raises on an unknown slug; the old disk-space
-    seed only attached `inbox` when it existed. No label -> no crash."""
-    with _test_db() as db:
-        ensure_default_routines(db)
-        disk = db.scalars(select(Task).where(Task.title == DISK_SPACE_TITLE)).one()
-        assert [label.slug for label in disk.labels] == []
-
-
-def test_disk_space_gets_inbox_label_when_present(_test_db):
-    from app.labels.models import Label
-
-    with _test_db() as db:
-        db.add(Label(slug="inbox", name="Inbox"))
-        db.commit()
-
-        ensure_default_routines(db)
-
-        disk = db.scalars(select(Task).where(Task.title == DISK_SPACE_TITLE)).one()
-        assert [label.slug for label in disk.labels] == ["inbox"]
-
-
 def test_brief_constants_are_the_final_seed_text(_test_db):
     """Guard the core routine-brief invariants that old migrations used to cover."""
     assert CONSOLIDATION_TITLE == "Daily consolidation"
     assert "harvest durable bits" in CONSOLIDATION_BRIEF
     assert COLLECT_TITLE == "Collect improvement items"
-    assert "labels=['improve-life-assistant']" in COLLECT_BRIEF
+    assert "assistant-owned improvement task" in COLLECT_BRIEF
     assert "Each item becomes its own task" in COLLECT_BRIEF
     assert "let the task triage" in COLLECT_BRIEF
     assert "Process improvement items routine" not in COLLECT_BRIEF

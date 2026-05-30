@@ -239,17 +239,6 @@ def test_done_pagination_walks_cursor_to_exhaustion(client):
     assert len(seen) == len(set(seen))  # no row served twice
 
 
-def test_done_pagination_respects_label_filter(client):
-    client.post("/api/labels", json={"slug": "fin", "name": "Finance"})
-    tagged = client.post("/api/tasks", json={"title": "tagged"}).json()["id"]
-    client.patch(f"/api/tasks/{tagged}", json={"labels": ["fin"], "is_done": True})
-    untagged = client.post("/api/tasks", json={"title": "untagged"}).json()["id"]
-    client.patch(f"/api/tasks/{untagged}", json={"is_done": True})
-
-    body = client.get("/api/tasks?done=true&label=fin").json()
-    assert [t["id"] for t in body["tasks"]] == [tagged]
-
-
 def test_done_cursor_tamper_safe(client):
     r = client.get("/api/tasks?done=true&cursor=not-a-valid-cursor")
     assert r.status_code == 422
@@ -533,20 +522,6 @@ def test_task_direct_orm_mutation_refreshes_updated_at(client, monkeypatch):
         s.commit()
         s.refresh(task)
         assert task.updated_at == stamped
-
-
-def test_task_label_only_mutation_refreshes_updated_at(client, monkeypatch):
-    from app.tasks import models as task_models
-
-    client.post("/api/labels", json={"slug": "fresh", "name": "Fresh"})
-    created = client.post("/api/tasks", json={"title": "Label touch"}).json()
-    stamped = datetime(2031, 2, 3, 4, 5, 6)
-    monkeypatch.setattr(task_models, "utc_now", lambda: stamped)
-
-    resp = client.patch(f"/api/tasks/{created['id']}", json={"labels": ["fresh"]})
-
-    assert resp.status_code == 200
-    assert resp.json()["updated_at"] == "2031-02-03T04:05:06Z"
 
 
 def test_activity_returns_stalled_and_errored_buckets(client):

@@ -138,7 +138,8 @@ def test_main_prompt_routes_explicit_self_improvement_requests(_test_db, skills_
 
     assert "Self-improvement only runs when" in prompt
     assert "asks to treat something as an improvement" in prompt
-    assert "create an assistant task with `labels=['improve-life-assistant']`" in prompt
+    assert "create an assistant task" in prompt
+    assert "labels=['improve-life-assistant']" not in prompt
     assert "hand off with `ask_user_choice`" in prompt
     assert "learn from a correction" not in prompt
     assert "Other feedback stays in the current conversation" in prompt
@@ -156,7 +157,7 @@ def test_shared_app_context_appears_before_main_chat_role(_test_db, skills_dir: 
     prompt = _build_prompt(sid)
     assert "## App context" in prompt
     assert prompt.index("## App context") < prompt.index("## Main chat")
-    assert "It has chats, tasks, knowledge notes, core memory, and skills" in prompt
+    assert "It has chats, goals, tasks, knowledge notes, core memory, and skills" in prompt
     assert "Main chat is for conversation and coordination" in prompt
     assert "task chats hold focused work" in prompt
     assert "durable sources of truth" in prompt
@@ -176,9 +177,47 @@ def test_prompt_requires_public_routes_for_user_facing_app_links(_test_db, skill
     prompt = _build_prompt(sid)
     assert "## App links" in prompt
     assert "[<task title>](/tasks/<id>)" in prompt
+    assert "[<goal title>](/goals/<id>)" in prompt
     assert "[<note title>](/know/open/<path>)" in prompt
     assert "/know/open/Projects/Life%20Assistant%20MVP%20Roadmap.md" in prompt
     assert "Do not emit `knowledge://...` links." in prompt
+
+
+def test_prompt_explains_goal_vs_task_boundaries(_test_db, skills_dir: Path):
+    from app.chat.service import get_or_create_main_session
+
+    Session = _test_db
+    with Session() as s:
+        main = get_or_create_main_session(s)
+        sid = main.id
+
+    prompt = _build_prompt(sid)
+    assert "## How goals work" in prompt
+    assert "Goals are durable long-lived outcomes or projects" in prompt
+    assert "Tasks are concrete next actions" in prompt
+    assert "Goals do not have their own chats" in prompt
+    assert "Complete goals explicitly with `update_goal(is_done=True)`" in prompt
+    assert "When a linked task handoff arrives in main chat" in prompt
+
+
+def test_task_prompt_includes_linked_goal_identity(_test_db, skills_dir: Path):
+    from app.goals import service as goals_service
+    from app.goals.schemas import GoalCreate
+    from app.tasks import service as tasks_service
+    from app.tasks.schemas import TaskCreate
+
+    Session = _test_db
+    with Session() as s:
+        goal = goals_service.create_goal(s, GoalCreate(title="Ship goals MVP"))
+        task = tasks_service.create_task(
+            s,
+            TaskCreate(title="Write UI", assignee="assistant", goal_id=goal.id),
+        )
+        sid = task.chat_session_id
+
+    prompt = _build_prompt(sid)
+    assert f"- goal_id: {goal.id}" in prompt
+    assert "- goal_title: Ship goals MVP" in prompt
 
 
 def test_task_prompt_requires_visible_status_when_web_research_is_blocked(

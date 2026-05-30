@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Play } from "lucide-react";
+import { ArrowLeftRight, Play, Target } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -10,7 +10,6 @@ import {
   IconUser,
 } from "@/shell/icons";
 import { cn } from "@/lib/utils";
-import { labelSlugDisplay } from "@/screens/Labels/labelDisplay";
 
 import { formatCompletedAt, formatDoAt, formatInterval } from "./format";
 import { runTaskNow, updateTask, type Task } from "./tasksApi";
@@ -26,8 +25,6 @@ type TaskRowProps = {
   isErrored?: boolean;
   assistantName?: string;
 };
-
-const MAX_INLINE_LABELS = 2;
 
 export function TaskRow({
   task,
@@ -170,8 +167,8 @@ export function TaskRow({
   // detectable — an always-truthy element would render an empty meta
   // row for plain todos (the phantom-gap bug, again).
   const timeNode = RightLabel({ task });
-  const showLabels = !task.is_done && task.labels.length > 0;
-  const hasMeta = showLabels || stateToken !== null || timeNode !== null;
+  const showGoal = task.goal_id !== null && task.goal_title !== null;
+  const hasMeta = showGoal || stateToken !== null || timeNode !== null;
   // Live-running tasks: the agent is mid-step. Checking off is still
   // allowed (it stops on next notice) but the live one is greyed to
   // discourage racing the runner.
@@ -246,7 +243,7 @@ export function TaskRow({
       </button>
 
       {/* Two lines: title (up to 2, never clipped to one) then a meta
-          row — labels left, runner-state + time right-aligned. */}
+          row — goal/state/time context underneath. */}
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <span
           data-testid="task-row-title"
@@ -262,7 +259,16 @@ export function TaskRow({
             data-testid="task-row-meta"
             className="flex items-center gap-2 text-[12px] text-life-ink-3"
           >
-            {showLabels && <TaskRowLabels labels={task.labels} />}
+            {showGoal && (
+              <span
+                data-testid="task-row-goal-chip"
+                className="inline-flex min-w-0 max-w-[14rem] shrink items-center gap-1 rounded-full border border-life-line bg-life-card px-1.5 py-0.5 text-[11px] font-medium text-life-ink-3"
+                title={`Goal: ${task.goal_title}`}
+              >
+                <Target className="h-3 w-3 shrink-0" />
+                <span className="truncate">{task.goal_title}</span>
+              </span>
+            )}
             {(stateToken !== null || timeNode !== null) && (
               <span className="ml-auto flex shrink-0 items-center gap-2">
                 {stateToken}
@@ -310,37 +316,6 @@ function RowQuickActions({
     >
       <Play className="h-3.5 w-3.5" />
     </button>
-  );
-}
-
-function TaskRowLabels({ labels }: { labels: string[] }) {
-  const visible = labels.slice(0, MAX_INLINE_LABELS);
-  const overflow = labels.length - visible.length;
-  return (
-    <span
-      data-testid="task-row-labels"
-      className="flex shrink-0 items-center gap-1"
-    >
-      {visible.map((slug) => (
-        <span
-          key={slug}
-          data-testid="task-row-label-chip"
-          className="rounded-full border border-life-line bg-life-card px-1.5 py-0.5 text-[11px] font-medium text-life-ink-3"
-          title={`Label: ${labelSlugDisplay(slug)}`}
-        >
-          {labelSlugDisplay(slug)}
-        </span>
-      ))}
-      {overflow > 0 && (
-        <span
-          data-testid="task-row-label-overflow"
-          className="rounded-full border border-life-line bg-life-card px-1.5 py-0.5 text-[11px] font-medium text-life-ink-3"
-          title={`${overflow} more label${overflow === 1 ? "" : "s"}`}
-        >
-          +{overflow}
-        </span>
-      )}
-    </span>
   );
 }
 

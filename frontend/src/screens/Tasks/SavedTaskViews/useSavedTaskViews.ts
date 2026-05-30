@@ -18,12 +18,11 @@ import {
 const URL_PARAM_KEYS = [
   "view",
   "statuses",
-  "labels",
   "assignee",
   "due",
 ] as const;
 type UrlParamKey = (typeof URL_PARAM_KEYS)[number];
-const LEGACY_URL_PARAM_KEYS = [...URL_PARAM_KEYS, "group"] as const;
+const LEGACY_URL_PARAM_KEYS = [...URL_PARAM_KEYS, "group", "labels"] as const;
 
 type ParsedUrl = {
   hasState: boolean;
@@ -49,11 +48,6 @@ function parseUrl(params: URLSearchParams): ParsedUrl {
       );
     filters.statuses = statuses;
   }
-  const labelsRaw = params.get("labels");
-  if (labelsRaw !== null) {
-    const labels = labelsRaw.split(",").filter(Boolean);
-    filters.labels = labels;
-  }
   const assigneeRaw = params.get("assignee");
   if (assigneeRaw === "user" || assigneeRaw === "assistant") {
     filters.assignee = assigneeRaw;
@@ -78,9 +72,6 @@ function encodeState(
   if (viewId != null) out.view = String(viewId);
   if (filters.statuses !== undefined) {
     out.statuses = filters.statuses.join(",");
-  }
-  if (filters.labels !== undefined) {
-    out.labels = filters.labels.join(",");
   }
   if (filters.assignee !== undefined) out.assignee = filters.assignee ?? "";
   if (filters.due !== undefined) out.due = filters.due ?? "";
@@ -127,7 +118,6 @@ export function useSavedTaskViews() {
       } else if (urlView && fromUrl.viewId === urlView.id) {
         const hasOverride =
           fromUrl.filters.statuses !== undefined ||
-          fromUrl.filters.labels !== undefined ||
           fromUrl.filters.assignee !== undefined ||
           fromUrl.filters.due !== undefined;
         if (!hasOverride) setWorkingFilters(target.filters);

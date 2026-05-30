@@ -26,8 +26,9 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     description: null,
     is_done: false,
     assignee: "user",
-    labels: [],
     chat_session_id: 11,
+    goal_id: null,
+    goal_title: null,
     do_at: null,
     due_at: null,
     interval_unit: null,
@@ -253,42 +254,16 @@ describe("TaskRow", () => {
     });
   });
 
-  it("renders inline #slug chips for each label", () => {
+  it("renders a linked goal chip when present", () => {
     render(
       <TaskRow
-        task={makeTask({ labels: ["inbox", "focus"] })}
-        onOpen={vi.fn()}
-      />,
-    );
-    expect(screen.getByText("#inbox")).toBeInTheDocument();
-    expect(screen.getByText("#focus")).toBeInTheDocument();
-    expect(screen.queryByTestId("task-row-label-overflow")).not.toBeInTheDocument();
-  });
-
-  it("renders the improve-life-assistant label with friendly product copy", () => {
-    render(
-      <TaskRow
-        task={makeTask({ labels: ["improve-life-assistant"] })}
+        task={makeTask({ goal_id: 3, goal_title: "Ship goals MVP" })}
         onOpen={vi.fn()}
       />,
     );
 
-    expect(screen.getByText("Improve the assistant")).toBeInTheDocument();
-    expect(screen.queryByText("#improve-life-assistant")).not.toBeInTheDocument();
-  });
-
-  it("with 3+ labels shows only the first 2 + a +N chip", () => {
-    render(
-      <TaskRow
-        task={makeTask({ labels: ["inbox", "focus", "errands", "personal"] })}
-        onOpen={vi.fn()}
-      />,
-    );
-    const chips = screen.getAllByTestId("task-row-label-chip");
-    expect(chips).toHaveLength(2);
-    expect(chips[0]).toHaveTextContent("#inbox");
-    expect(chips[1]).toHaveTextContent("#focus");
-    expect(screen.getByTestId("task-row-label-overflow")).toHaveTextContent("+2");
+    const chip = screen.getByTestId("task-row-goal-chip");
+    expect(chip).toHaveTextContent("Ship goals MVP");
   });
 
   it("fires onAfterToggleDone after a user-initiated checkoff", async () => {
@@ -363,15 +338,6 @@ describe("TaskRow", () => {
     expect(screen.queryByTestId("task-row-run-now")).not.toBeInTheDocument();
   });
 
-  it("hides the label strip on a done task", () => {
-    render(
-      <TaskRow
-        task={makeTask({ labels: ["inbox"], is_done: true })}
-        onOpen={vi.fn()}
-      />,
-    );
-    expect(screen.queryByTestId("task-row-labels")).not.toBeInTheDocument();
-  });
 });
 
 describe("TaskRow — two-line layout & persistent affordances", () => {
@@ -380,8 +346,7 @@ describe("TaskRow — two-line layout & persistent affordances", () => {
       <TaskRow
         task={makeTask({
           title:
-            "A very long task title that would previously be cut off to a sliver because labels and time competed for the same single row",
-          labels: ["inbox"],
+            "A very long task title that would previously be cut off to a sliver because metadata and time competed for the same single row",
         })}
         onOpen={vi.fn()}
       />,
@@ -392,13 +357,12 @@ describe("TaskRow — two-line layout & persistent affordances", () => {
     expect(title).toHaveTextContent(/previously be cut off/);
   });
 
-  it("labels + right-meta sit in a meta row beneath the title", () => {
+  it("right-meta sits in a meta row beneath the title", () => {
     render(
       <TaskRow
         task={makeTask({
           is_done: true,
           completed_at: "2026-05-01T10:00:00Z",
-          labels: ["inbox"],
         })}
         onOpen={vi.fn()}
       />,

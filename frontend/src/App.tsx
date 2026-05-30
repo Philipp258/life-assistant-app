@@ -9,6 +9,8 @@ import {
 import { AgentScreen } from "@/screens/Agent/AgentScreen";
 import { LoginScreen } from "@/screens/Auth/LoginScreen";
 import { ChatScreen } from "@/screens/Chat/ChatScreen";
+import { GoalDetailPage } from "@/screens/Goals/GoalDetailPage";
+import { GoalsScreen } from "@/screens/Goals/GoalsScreen";
 import { KnowledgeScreen } from "@/screens/Knowledge/KnowledgeScreen";
 import {
   CoreMemoryRoute,
@@ -68,6 +70,8 @@ export function AppRoutes() {
       <Routes>
         <Route path="/" element={<Navigate to="/chat" replace />} />
         <Route path="/chat" element={null} />
+        <Route path="/goals" element={<GoalsScreen />} />
+        <Route path="/goals/:goalId" element={<GoalDetailPage />} />
         <Route path="/tasks" element={<TasksScreen />} />
         <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
         <Route path="/know" element={<KnowledgeScreen />} />

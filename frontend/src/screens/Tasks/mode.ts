@@ -19,7 +19,7 @@ export const WHEN_OPTIONS: { v: When; label: string; hint: string }[] = [
 ];
 
 /** When options offered for a given Who. Me skips "Later" — passive
- * date labels with no firing aren't useful; recurring chores are. */
+ * passive dated rows with no firing aren't useful; recurring chores are. */
 export function whenOptionsFor(who: Who): typeof WHEN_OPTIONS {
   if (who === "me") return WHEN_OPTIONS.filter((o) => o.v !== "later");
   return WHEN_OPTIONS;

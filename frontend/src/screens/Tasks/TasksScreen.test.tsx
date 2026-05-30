@@ -34,19 +34,12 @@ vi.mock("./savedTaskViewsApi", async (importOriginal) => {
   };
 });
 
-vi.mock("@/screens/Labels/labelsApi", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/screens/Labels/labelsApi")>();
-  return { ...actual, listLabels: vi.fn() };
-});
-
-import { listLabels } from "@/screens/Labels/labelsApi";
 import { createView, listViews, updateView } from "./savedTaskViewsApi";
 import { fetchTaskActivity, listDoneTasks, listTasks } from "./tasksApi";
 
 const listTasksMock = vi.mocked(listTasks);
 const listDoneTasksMock = vi.mocked(listDoneTasks);
 const fetchTaskActivityMock = vi.mocked(fetchTaskActivity);
-const listLabelsMock = vi.mocked(listLabels);
 const listViewsMock = vi.mocked(listViews);
 const createViewMock = vi.mocked(createView);
 const updateViewMock = vi.mocked(updateView);
@@ -58,8 +51,9 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     description: null,
     is_done: false,
     assignee: "user",
-    labels: [],
     chat_session_id: 1,
+    goal_id: null,
+    goal_title: null,
     do_at: null,
     due_at: null,
     interval_unit: null,
@@ -98,8 +92,6 @@ beforeEach(() => {
     stalled_session_ids: [],
     errored_session_ids: [],
   });
-  listLabelsMock.mockReset();
-  listLabelsMock.mockResolvedValue([]);
   listViewsMock.mockReset();
   listViewsMock.mockResolvedValue([makeView()]);
   createViewMock.mockReset();
@@ -130,14 +122,13 @@ describe("TasksScreen", () => {
 
   it("calls listTasks with the active view's filters on mount", async () => {
     listViewsMock.mockResolvedValue([
-      makeView({ filters: { labels: ["home"], statuses: ["open"] } }),
+      makeView({ filters: { statuses: ["open"] } }),
     ]);
     listTasksMock.mockResolvedValue([]);
     renderScreen();
 
     await waitFor(() => {
       expect(listTasksMock).toHaveBeenCalledWith({
-        labels: ["home"],
         statuses: ["open"],
         done: false,
       });
@@ -149,8 +140,8 @@ describe("TasksScreen", () => {
       makeView({ id: 1, name: "Inbox", filters: {}, is_default: true }),
       makeView({
         id: 2,
-        name: "Home",
-        filters: { labels: ["home"] },
+        name: "Mine",
+        filters: { assignee: "user" },
         is_default: false,
       }),
     ]);
@@ -160,34 +151,11 @@ describe("TasksScreen", () => {
     // Initial load with default view's empty filters
     await waitFor(() => expect(listTasksMock).toHaveBeenCalledWith({ done: false }));
 
-    // Click the "Home" tab
-    await userEvent.click(await screen.findByText("Home"));
+    await userEvent.click(await screen.findByText("Mine"));
 
     await waitFor(() => {
-      expect(listTasksMock).toHaveBeenCalledWith({ labels: ["home"], done: false });
+      expect(listTasksMock).toHaveBeenCalledWith({ assignee: "user", done: false });
     });
-  });
-
-  it("renders label chips on each task row", async () => {
-    listTasksMock.mockResolvedValue([
-      makeTask({ id: 1, title: "Inbox todo", labels: ["inbox"] }),
-      makeTask({
-        id: 2,
-        title: "Improve assistant todo",
-        labels: ["improve-life-assistant"],
-      }),
-    ]);
-    renderScreen();
-
-    expect((await screen.findAllByText("Inbox todo")).length).toBeGreaterThan(0);
-    const rows = await screen.findAllByTestId("task-row-labels");
-    expect(rows).toHaveLength(2);
-    const chipTexts = (
-      await screen.findAllByTestId("task-row-label-chip")
-    ).map((c) => c.textContent);
-    expect(chipTexts).toEqual(
-      expect.arrayContaining(["#inbox", "Improve the assistant"]),
-    );
   });
 
   it("does not issue an initial unfiltered main-list fetch before saved views hydrate", async () => {
@@ -260,8 +228,8 @@ describe("TasksScreen", () => {
       makeView({ id: 1, name: "Inbox", filters: {}, is_default: true }),
       makeView({
         id: 2,
-        name: "Home",
-        filters: { labels: ["home"] },
+        name: "Mine",
+        filters: { assignee: "user" },
         is_default: false,
       }),
     ]);
@@ -291,12 +259,12 @@ describe("TasksScreen", () => {
       ),
     );
 
-    // Switch to Home view — URL should update to view=2 with its labels.
-    await userEvent.click(screen.getByText("Home"));
+    await userEvent.click(screen.getByText("Mine"));
     await waitFor(() => {
       const search = screen.getByTestId("probe-search").textContent ?? "";
       expect(search).toContain("view=2");
-      expect(search).toContain("labels=home");
+      expect(search).toContain("assignee=user");
+      expect(search).not.toContain("labels=");
       expect(search).not.toContain("group=");
     });
   });
@@ -306,8 +274,8 @@ describe("TasksScreen", () => {
       makeView({ id: 1, name: "Inbox", filters: {}, is_default: true }),
       makeView({
         id: 2,
-        name: "Home",
-        filters: { labels: ["home"] },
+        name: "Mine",
+        filters: { assignee: "user" },
         is_default: false,
       }),
     ]);
@@ -329,12 +297,11 @@ describe("TasksScreen", () => {
     await waitFor(() => {
       expect(listTasksMock).toHaveBeenCalledWith({
         statuses: ["open"],
-        labels: ["home"],
         assignee: "user",
         done: false,
       });
     });
-    expect(await screen.findByText("Home")).toBeInTheDocument();
+    expect(await screen.findByText("Mine")).toBeInTheDocument();
   });
 
   it("filters the visible tasks by the below-title search input", async () => {
@@ -429,7 +396,7 @@ describe("TasksScreen", () => {
   it("scopes the done archive to the active view filters", async () => {
     listViewsMock.mockResolvedValue([
       makeView({
-        filters: { labels: ["home"], assignee: "user", statuses: ["open"] },
+        filters: { assignee: "user", statuses: ["open"] },
       }),
     ]);
     listTasksMock.mockResolvedValue([]);
@@ -440,13 +407,13 @@ describe("TasksScreen", () => {
     await waitFor(() =>
       expect(listDoneTasksMock).toHaveBeenCalledWith(
         expect.objectContaining({
-          labels: ["home"],
           assignee: "user",
         }),
         null,
       ),
     );
     expect(listDoneTasksMock.mock.calls[0][0]).not.toHaveProperty("statuses");
+    expect(listDoneTasksMock.mock.calls[0][0]).not.toHaveProperty("labels");
   });
 
   it("shows an undo toast after a row check-off and reverts on Undo", async () => {

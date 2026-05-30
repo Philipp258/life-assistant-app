@@ -1,5 +1,3 @@
-import { labelSlugDisplay } from "@/screens/Labels/labelDisplay";
-
 import type { Task } from "./tasksApi";
 
 /** Normalise a query/haystack the same way: lowercase + collapsed whitespace. */
@@ -14,16 +12,11 @@ export function tokenize(query: string): string[] {
 }
 
 /** Build the searchable haystack for a task. Title carries most signal, but
- * we also include description and labels so a search like "groceries" still
- * finds a task that mentions it only in the description, and "@home" still
- * finds tasks tagged with a `home` label. */
+ * we also include description so a search like "groceries" still finds a
+ * task that mentions it only there. */
 function haystack(task: Task): string {
   const parts: string[] = [task.title];
   if (task.description) parts.push(task.description);
-  for (const slug of task.labels) {
-    parts.push(slug);
-    parts.push(labelSlugDisplay(slug));
-  }
   return normalise(parts.join(" "));
 }
 

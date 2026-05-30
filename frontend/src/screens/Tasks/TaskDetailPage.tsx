@@ -6,19 +6,18 @@ import {
   Pencil,
   Play,
   RotateCcw,
-  Tag,
+  Target,
   Timer,
   User as UserIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { MarkdownView } from "@/components/MarkdownView";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useGoBack } from "@/lib/useGoBack";
 import { cn } from "@/lib/utils";
-import { labelSlugDisplay } from "@/screens/Labels/labelDisplay";
 import { useIdentity } from "@/shell/identity";
 
 import { getChatChannel } from "../Chat/chatChannel";
@@ -504,25 +503,17 @@ export function TaskMetadataSummary({ task }: { task: Task }) {
   const { assistantName } = useIdentity();
   const items: { icon: ReactNode; label: string; value: ReactNode }[] = [];
 
-  if (task.labels.length > 0) {
+  if (task.goal_id !== null && task.goal_title !== null) {
     items.push({
-      icon: <Tag className="h-3.5 w-3.5" />,
-      label: "Labels",
+      icon: <Target className="h-3.5 w-3.5" />,
+      label: "Goal",
       value: (
-        <span
-          data-testid="task-detail-labels"
-          className="flex flex-wrap items-center gap-1"
+        <Link
+          to={`/goals/${task.goal_id}`}
+          className="font-medium text-life-accent"
         >
-          {task.labels.map((slug) => (
-            <span
-              key={slug}
-              data-testid="task-detail-label-chip"
-              className="rounded-full border border-life-line bg-life-bg px-1.5 py-0.5 text-[11px] font-medium text-life-ink-2"
-            >
-              {labelSlugDisplay(slug)}
-            </span>
-          ))}
-        </span>
+          {task.goal_title}
+        </Link>
       ),
     });
   }

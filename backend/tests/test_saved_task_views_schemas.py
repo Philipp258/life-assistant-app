@@ -14,9 +14,9 @@ def test_create_rejects_retired_grouping_modes():
         SavedTaskViewCreate(name="x", filters={}, group_by="status")
 
 
-def test_create_accepts_label_filter():
+def test_create_strips_legacy_label_filter():
     v = SavedTaskViewCreate(name="x", filters={"labels": ["home"]}, group_by="none")
-    assert v.filters["labels"] == ["home"]
+    assert v.filters == {}
 
 
 def test_filters_rejects_extra_keys():

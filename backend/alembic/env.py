@@ -7,7 +7,7 @@ from app.config import settings
 from app.db import Base
 from app.chat import models  # noqa: F401  (import to register model metadata)
 from app.defaults import models as _defaults_models  # noqa: F401
-from app.labels import models as _labels_models  # noqa: F401
+from app.goals import models as _goals_models  # noqa: F401
 from app.saved_task_views import models as _saved_task_views_models  # noqa: F401
 from app.tasks import models as _tasks_models  # noqa: F401
 from app.users import models as _users_models  # noqa: F401

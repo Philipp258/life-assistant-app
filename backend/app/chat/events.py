@@ -102,17 +102,22 @@ def _format_entry(task: Task | None, handoff: str) -> str:
     body = handoff.strip() or "(no explicit handoff text)"
     if task is None:
         return f"task: (deleted)\nstatus: {_task_status(task)}\n\nhandoff:\n{body}"
-    return "\n".join(
-        [
-            f"task_id: {task.id}",
-            f"title: {task.title}",
-            f"status: {_task_status(task)}",
-            f"link: /tasks/{task.id}",
-            "",
-            "handoff:",
-            body,
-        ]
-    )
+    lines = [
+        f"task_id: {task.id}",
+        f"title: {task.title}",
+        f"status: {_task_status(task)}",
+        f"link: /tasks/{task.id}",
+    ]
+    if task.goal_id is not None:
+        lines.extend(
+            [
+                f"goal_id: {task.goal_id}",
+                f"goal_title: {task.goal.title if task.goal is not None else '(unknown)'}",
+                f"goal_link: /goals/{task.goal_id}",
+            ]
+        )
+    lines.extend(["", "handoff:", body])
+    return "\n".join(lines)
 
 
 def _build_injection(entries: list[str]) -> list[ModelMessage]:
@@ -134,8 +139,12 @@ def _build_injection(entries: list[str]) -> list[ModelMessage]:
         "only routine internal status the user did not ask to track (a "
         "recurrence tick, a wait or reschedule, polling), call `do_nothing` "
         "to end the turn with no message. When genuinely unsure, surface "
-        "it. Either way, do not re-answer or continue earlier conversation "
-        "— only address these task updates."
+        "it. If you surface it, write a direct main-chat reply to the user, "
+        "not a status report about the user or the task. Use natural "
+        "first-/second-person phrasing, keep it restrained, and turn the "
+        "handoff into what the user can think about next. Either way, do "
+        "not re-answer or continue earlier conversation — only address "
+        "these task updates."
     )
     return [ModelRequest(parts=[UserPromptPart(content=content)])]
 

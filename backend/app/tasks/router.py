@@ -46,7 +46,6 @@ def tasks_activity() -> dict[str, list[int]]:
 
 @router.get("/tasks")
 def list_tasks(
-    label: list[str] | None = Query(default=None),
     assignee: str | None = Query(default=None),
     status: list[str] | None = Query(default=None),
     due: str | None = Query(default=None),
@@ -70,7 +69,6 @@ def list_tasks(
             try:
                 tasks, next_cursor = service.list_done_tasks(
                     session,
-                    labels=label,
                     assignee=assignee,  # type: ignore[arg-type]
                     due=due,  # type: ignore[arg-type]
                     cursor=cursor,
@@ -84,7 +82,6 @@ def list_tasks(
             }
         tasks = service.list_tasks(
             session,
-            labels=label,
             assignee=assignee,  # type: ignore[arg-type]
             statuses=status,  # type: ignore[arg-type]
             due=due,  # type: ignore[arg-type]

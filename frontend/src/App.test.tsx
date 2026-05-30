@@ -26,6 +26,14 @@ vi.mock("@/screens/Tasks/TaskDetailPage", () => ({
   TaskDetailPage: () => <div>task detail</div>,
 }));
 
+vi.mock("@/screens/Goals/GoalsScreen", () => ({
+  GoalsScreen: () => <div>goals</div>,
+}));
+
+vi.mock("@/screens/Goals/GoalDetailPage", () => ({
+  GoalDetailPage: () => <div>goal detail</div>,
+}));
+
 vi.mock("@/screens/Knowledge/KnowledgeScreen", () => ({
   KnowledgeScreen: () => <div>know</div>,
 }));

@@ -66,8 +66,9 @@ class TaskRead(BaseModel):
     description: str | None
     is_done: bool
     assignee: Assignee
-    labels: list[str]
     chat_session_id: int
+    goal_id: int | None
+    goal_title: str | None
     do_at: UtcDatetime | None
     due_at: UtcDatetime | None
     interval_unit: IntervalUnit | None
@@ -84,11 +85,11 @@ class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     description: str | None = None
     assignee: Assignee = "user"
-    labels: list[str] = Field(default_factory=list)
     do_at: datetime | None = None
     due_at: datetime | None = None
     interval_unit: IntervalUnit | None = None
     interval_count: int | None = Field(default=None, ge=1)
+    goal_id: int | None = None
 
     @field_validator("do_at", "due_at", mode="after")
     @classmethod
@@ -110,11 +111,11 @@ class TaskUpdate(BaseModel):
     description: str | None = None
     is_done: bool | None = None
     assignee: Assignee | None = None
-    labels: list[str] | None = None
     do_at: datetime | None = None
     due_at: datetime | None = None
     interval_unit: IntervalUnit | None = None
     interval_count: int | None = Field(default=None, ge=1)
+    goal_id: int | None = None
 
     @field_validator("do_at", "due_at", mode="after")
     @classmethod
@@ -133,14 +134,17 @@ class TaskUpdate(BaseModel):
 
 
 def task_to_read(task: Task) -> TaskRead:
+    goal = getattr(task, "goal", None)
+    goal_title = goal.title if goal is not None else None
     return TaskRead(
         id=task.id,
         title=task.title,
         description=task.description,
         is_done=task.is_done,
         assignee=task.assignee,
-        labels=[label.slug for label in task.labels],
         chat_session_id=task.chat_session_id,
+        goal_id=getattr(task, "goal_id", None),
+        goal_title=goal_title,
         do_at=task.do_at,
         due_at=task.due_at,
         interval_unit=task.interval_unit,

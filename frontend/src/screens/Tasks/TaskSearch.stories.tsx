@@ -35,8 +35,9 @@ function makeTask(overrides: Partial<Task>): Task {
     description: null,
     is_done: false,
     assignee: "user",
-    labels: [],
     chat_session_id: 0,
+    goal_id: null,
+    goal_title: null,
     do_at: null,
     due_at: null,
     interval_unit: null,
@@ -52,20 +53,18 @@ function makeTask(overrides: Partial<Task>): Task {
   };
 }
 
-// Realistic mix: working, scheduled, done, mine + assistant, varied labels
-// and descriptions so search has something to find.
+// Realistic mix: working, scheduled, done, mine + assistant, with varied
+// descriptions so search has something to find.
 const CURRENT_VIEW: Task[] = [
   makeTask({
     id: 1,
     title: "Reply to Anna about the venue",
     description: "She asked about catering options for the dinner.",
-    labels: ["personal"],
   }),
   makeTask({
     id: 2,
     title: "Pick groceries on the way home",
     description: "Milk, eggs, bread, apples.",
-    labels: ["errand"],
   }),
   makeTask({
     id: 3,
@@ -73,14 +72,12 @@ const CURRENT_VIEW: Task[] = [
     description: "April deadline. Need the W-2 from work.",
     due_at: "2099-04-15T00:00:00Z",
     kind: "deadline",
-    labels: ["finance"],
   }),
   makeTask({
     id: 4,
     title: "Call dentist tomorrow morning",
     do_at: "2099-05-08T09:00:00Z",
     kind: "scheduled-todo",
-    labels: ["health"],
   }),
   makeTask({
     id: 5,
@@ -88,7 +85,6 @@ const CURRENT_VIEW: Task[] = [
     description: "Pitch deck for the Q3 review.",
     is_done: true,
     completed_at: "2026-05-06T14:00:00Z",
-    labels: ["work"],
   }),
   makeTask({
     id: 6,
@@ -97,7 +93,6 @@ const CURRENT_VIEW: Task[] = [
     chat_session_id: 100,
     kind: "job",
     state: "running",
-    labels: ["reading"],
   }),
   makeTask({
     id: 7,
@@ -107,7 +102,6 @@ const CURRENT_VIEW: Task[] = [
     interval_count: 1,
     kind: "routine",
     state: "running",
-    labels: ["work"],
   }),
 ];
 
@@ -120,20 +114,17 @@ const OTHER_TASKS: Task[] = [
     description: "Probably from BER. Budget around 400 EUR.",
     is_done: true,
     completed_at: "2026-04-12T20:00:00Z",
-    labels: ["travel", "personal"],
   }),
   makeTask({
     id: 51,
     title: "Cancel old gym membership",
     is_done: true,
     completed_at: "2026-04-01T10:00:00Z",
-    labels: ["finance"],
   }),
   makeTask({
     id: 52,
     title: "Plan summer trip to Lisbon",
     description: "Anna wants to come too.",
-    labels: ["travel", "personal"],
   }),
 ];
 
@@ -193,12 +184,6 @@ function Frame({ toolbar, belowTitle, right, results, query, scopeNote }: FrameP
           right={
             right ?? (
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="rounded-full border border-life-line bg-life-card px-3 py-1.5 text-[12px] font-medium text-life-ink-2"
-                >
-                  Labels
-                </button>
                 <button
                   type="button"
                   className="flex items-center gap-1.5 rounded-full bg-life-accent px-3.5 py-2 text-[13px] font-medium text-white"
@@ -333,12 +318,6 @@ export const B_HeaderExpandable: Story = {
               className="flex h-8 w-8 items-center justify-center rounded-full border border-life-line bg-life-card text-life-ink-2"
             >
               <Search className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              className="rounded-full border border-life-line bg-life-card px-3 py-1.5 text-[12px] font-medium text-life-ink-2"
-            >
-              Labels
             </button>
             <button
               type="button"

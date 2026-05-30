@@ -118,7 +118,7 @@ export const VerboseLongCopy: Story = {
     question: verboseQuestion,
     options: [
       "Make a short planning checklist",
-      "Create detailed tasks with labels and due dates",
+      "Create detailed tasks with goals and due dates",
       "Only flag the highest-risk item",
     ],
     allowFreeText: true,
