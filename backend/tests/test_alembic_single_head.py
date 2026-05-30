@@ -180,6 +180,37 @@ def test_task_log_line_backfill_for_existing_recurring_routines(alembic_cfg: Con
         con.close()
 
 
+def test_goals_migration_preserves_tasks_with_session_cycle(alembic_cfg: Config) -> None:
+    command.upgrade(alembic_cfg, "c8d4e9f2a713")
+
+    con = sqlite3.connect(alembic_cfg.attributes["db_path"])
+    try:
+        con.execute("PRAGMA foreign_keys=ON")
+        con.execute("INSERT INTO sessions (id, title, kind) VALUES (1, 'Task session', 'task')")
+        con.execute(
+            """
+            INSERT INTO tasks (id, title, assignee, chat_session_id, is_done)
+            VALUES (1, 'Keep me', 'user', 1, 0)
+            """
+        )
+        con.execute("UPDATE sessions SET task_id = 1 WHERE id = 1")
+        con.commit()
+    finally:
+        con.close()
+
+    command.upgrade(alembic_cfg, "head")
+
+    con = sqlite3.connect(alembic_cfg.attributes["db_path"])
+    try:
+        assert con.execute("SELECT count(*) FROM tasks").fetchone()[0] == 1
+        assert con.execute("SELECT task_id FROM sessions WHERE id = 1").fetchone()[0] == 1
+        task_columns = {row[1] for row in con.execute("PRAGMA table_info(tasks)")}
+        assert "goal_id" in task_columns
+        assert con.execute("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        con.close()
+
+
 def _jwt(payload: dict) -> str:
     header = base64.urlsafe_b64encode(json.dumps({"alg": "RS256"}).encode()).rstrip(b"=")
     body = base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=")
