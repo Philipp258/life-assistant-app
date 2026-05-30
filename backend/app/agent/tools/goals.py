@@ -14,6 +14,7 @@ from pydantic_ai import Agent
 from app.agent.deps import AgentDeps
 from app.agent.tools._paging import normalize_page, paginate
 from app.db import SessionLocal
+from app.goals.models import Goal
 from app.goals import service
 from app.goals.schemas import (
     GoalCreate,
@@ -30,7 +31,7 @@ LIST_GOALS_PAGE_DEFAULT = 30
 LIST_GOALS_PAGE_MAX = 100
 
 
-def _goal_dict(goal, *, detail: bool = False) -> dict[str, Any]:
+def _goal_dict(goal: Goal, *, detail: bool = False) -> dict[str, Any]:
     read = goal_to_detail(goal) if detail else goal_to_read(goal)
     return read.model_dump(mode="json")
 

@@ -134,6 +134,7 @@ class TaskUpdate(BaseModel):
 
 
 def task_to_read(task: Task) -> TaskRead:
+    goal = task.goal
     return TaskRead(
         id=task.id,
         title=task.title,
@@ -142,7 +143,7 @@ def task_to_read(task: Task) -> TaskRead:
         assignee=task.assignee,
         chat_session_id=task.chat_session_id,
         goal_id=getattr(task, "goal_id", None),
-        goal_title=task.goal.title if getattr(task, "goal", None) is not None else None,
+        goal_title=goal.title if goal is not None else None,
         do_at=task.do_at,
         due_at=task.due_at,
         interval_unit=task.interval_unit,
