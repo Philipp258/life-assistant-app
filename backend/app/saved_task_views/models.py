@@ -16,8 +16,8 @@ class SavedTaskView(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     icon: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # JSON shape:
-    #   {"labels": ["home"], "assignee": "user" | "assistant" | null,
-    #    "statuses": ["open"], "due": "today" | "week" | null}
+    #   {"assignee": "user" | "assistant" | null, "statuses": ["open"],
+    #    "due": "today" | "week" | null}
     filters_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     group_by: Mapped[str] = mapped_column(String(16), nullable=False, default="none")
     sort_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

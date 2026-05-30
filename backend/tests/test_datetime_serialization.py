@@ -168,7 +168,6 @@ def test_task_summary_tool_uses_z_suffix():
         description = None
         is_done = False
         assignee = "assistant"
-        labels: list = []
         chat_session_id = 11
         do_at = datetime(2026, 5, 7, 21, 25, 0)
         due_at = datetime(2026, 5, 7, 22, 0, 0)

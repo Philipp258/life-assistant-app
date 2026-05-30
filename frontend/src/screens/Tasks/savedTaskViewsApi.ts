@@ -1,5 +1,4 @@
 export type FilterBlob = {
-  labels?: string[];
   assignee?: "user" | "assistant" | null;
   statuses?: ("open" | "scheduled" | "waiting" | "done")[];
   due?: "today" | "week" | null;

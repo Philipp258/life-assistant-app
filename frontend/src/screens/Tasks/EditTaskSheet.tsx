@@ -12,9 +12,6 @@ import { useIdentity } from "@/shell/identity";
 
 import { DescriptionEditor } from "./DescriptionEditor";
 
-import { labelDisplayName } from "@/screens/Labels/labelDisplay";
-import { listLabels, type Label as LabelRecord } from "@/screens/Labels/labelsApi";
-
 import {
   WHO_OPTIONS,
   whenOf,
@@ -60,7 +57,7 @@ export function EditTaskSheet({
             </SheetTitle>
           </SheetHeader>
 
-          <EditForm task={task} open={open} onPatch={onPatch} />
+          <EditForm task={task} onPatch={onPatch} />
 
           <div className="mt-2 flex items-center justify-between gap-2 border-t border-life-line pt-4">
             {onDelete ? (
@@ -107,26 +104,16 @@ async function confirmAndDelete(
 
 function EditForm({
   task,
-  open,
   onPatch,
 }: {
   task: Task;
-  open: boolean;
   onPatch: (patch: TaskUpdate) => Promise<void>;
 }) {
   const { assistantName } = useIdentity();
   const [titleDraft, setTitleDraft] = useState(task.title);
   const [descEditorOpen, setDescEditorOpen] = useState(false);
-  const [labels, setLabels] = useState<LabelRecord[]>([]);
 
   useEffect(() => setTitleDraft(task.title), [task.title]);
-
-  useEffect(() => {
-    if (!open) return;
-    listLabels()
-      .then(setLabels)
-      .catch(() => undefined);
-  }, [open]);
 
   const commitTitle = async () => {
     const v = titleDraft.trim();
@@ -231,32 +218,6 @@ function EditForm({
           )}
         </button>
       </Field>
-
-      {labels.length > 0 && (
-        <Field label="Labels">
-          <div
-            className="flex flex-wrap gap-1.5"
-            data-testid="edit-task-labels"
-          >
-            {labels.map((l) => {
-              const on = task.labels.includes(l.slug);
-              return (
-                <Pill
-                  key={l.id}
-                  label={labelDisplayName(l)}
-                  on={on}
-                  onClick={() => {
-                    const next = on
-                      ? task.labels.filter((s) => s !== l.slug)
-                      : [...task.labels, l.slug];
-                    void onPatch({ labels: next });
-                  }}
-                />
-              );
-            })}
-          </div>
-        </Field>
-      )}
 
       <PillGroup label="Assignee">
         {WHO_OPTIONS.map((o) => (

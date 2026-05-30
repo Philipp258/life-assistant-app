@@ -4,13 +4,14 @@ import { NavLink, useLocation } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
 
-import { IconAgent, IconBook, IconChat, IconTask } from "./icons";
+import { IconAgent, IconBook, IconChat, IconGoal, IconTask } from "./icons";
 
 type Tab = { to: string; label: string; icon: ReactNode };
 
 const TABS: Tab[] = [
   { to: "/chat", label: "Chat", icon: <IconChat /> },
   { to: "/tasks", label: "Tasks", icon: <IconTask /> },
+  { to: "/goals", label: "Goals", icon: <IconGoal /> },
   { to: "/know", label: "Knowledge", icon: <IconBook /> },
   { to: "/agent", label: "Agent", icon: <IconAgent /> },
 ];

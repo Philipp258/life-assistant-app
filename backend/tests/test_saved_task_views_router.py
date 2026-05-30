@@ -25,14 +25,14 @@ def test_default_view_listed(client):
 
 def test_create_view(client):
     body = {
-        "name": "Home",
+        "name": "Mine",
         "icon": "\U0001f3e0",
-        "filters": {"labels": ["home"]},
+        "filters": {"assignee": "user"},
         "group_by": "none",
     }
     resp = client.post("/api/saved-task-views", json=body)
     assert resp.status_code == 201
-    assert resp.json()["filters"]["labels"] == ["home"]
+    assert resp.json()["filters"]["assignee"] == "user"
 
 
 def test_patch_view(client):
@@ -140,7 +140,7 @@ def test_patch_sort_index_changes_list_order(client):
 
 @patch("app.saved_task_views.router.pick_emoji_for_view", return_value="\U0001f3e0")
 def test_create_uses_llm_for_icon_when_omitted(mock_pick, client):
-    body = {"name": "Home", "filters": {"labels": ["home"]}, "group_by": "none"}
+    body = {"name": "Mine", "filters": {"assignee": "user"}, "group_by": "none"}
     resp = client.post("/api/saved-task-views", json=body)
     assert resp.status_code == 201
     assert resp.json()["icon"] == "\U0001f3e0"

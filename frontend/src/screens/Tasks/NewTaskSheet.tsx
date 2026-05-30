@@ -12,8 +12,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useIdentity } from "@/shell/identity";
 
-import { labelDisplayName } from "@/screens/Labels/labelDisplay";
-import { listLabels, type Label as LabelRecord } from "@/screens/Labels/labelsApi";
+import { listGoals, type Goal } from "@/screens/Goals/goalsApi";
 
 import { WHO_OPTIONS, whenOptionsFor, type When, type Who } from "./mode";
 import { Field, IntervalRow, Pill, PillGroup } from "./taskFields";
@@ -39,18 +38,18 @@ export function NewTaskSheet({
   const [dueAt, setDueAt] = useState("");
   const [unit, setUnit] = useState<IntervalUnit>("week");
   const [count, setCount] = useState(1);
-  const [labels, setLabels] = useState<LabelRecord[]>([]);
-  const [selectedSlugs, setSelectedSlugs] = useState<string[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [selectedGoalId, setSelectedGoalId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    listLabels()
-      .then(setLabels)
+    listGoals(false)
+      .then(setGoals)
       .catch(() => undefined);
   }, [open]);
 
-  // "Me" doesn't surface a "Later" option (passive date labels with no
+  // "Me" doesn't surface a "Later" option (passive dated rows with no
   // firing aren't useful) — snap the When pill back to a valid choice
   // when the user flips Who.
   const whenOptions = useMemo(() => whenOptionsFor(who), [who]);
@@ -67,19 +66,13 @@ export function NewTaskSheet({
     setDueAt("");
     setUnit("week");
     setCount(1);
-    setSelectedSlugs([]);
+    setSelectedGoalId(null);
   };
 
   const handleClose = () => {
     if (submitting) return;
     reset();
     onClose();
-  };
-
-  const toggleLabel = (slug: string) => {
-    setSelectedSlugs((curr) =>
-      curr.includes(slug) ? curr.filter((s) => s !== slug) : [...curr, slug],
-    );
   };
 
   const needsDoAt = when === "later";
@@ -92,7 +85,7 @@ export function NewTaskSheet({
       description: description.trim() || null,
       assignee: who === "me" ? "user" : "assistant",
     };
-    if (selectedSlugs.length > 0) payload.labels = selectedSlugs;
+    if (selectedGoalId !== null) payload.goal_id = selectedGoalId;
     if (dueAt) payload.due_at = new Date(dueAt).toISOString();
     if (needsDoAt) {
       if (!doAt) return;
@@ -165,21 +158,24 @@ export function NewTaskSheet({
               />
             </Field>
 
-            {labels.length > 0 && (
-              <Field label="Labels">
-                <div className="flex flex-wrap gap-1.5" data-testid="new-task-labels">
-                  {labels.map((l) => {
-                    const on = selectedSlugs.includes(l.slug);
-                    return (
-                      <Pill
-                        key={l.id}
-                        label={labelDisplayName(l)}
-                        on={on}
-                        onClick={() => toggleLabel(l.slug)}
-                      />
-                    );
-                  })}
-                </div>
+            {goals.length > 0 && (
+              <Field label="Goal" htmlFor="task-goal">
+                <select
+                  id="task-goal"
+                  value={selectedGoalId === null ? "" : String(selectedGoalId)}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setSelectedGoalId(value ? Number(value) : null);
+                  }}
+                  className="h-10 w-full rounded-xl border border-life-line bg-life-card px-3 text-sm text-life-ink outline-none focus:border-life-accent focus:ring-2 focus:ring-life-accent/20"
+                >
+                  <option value="">No goal</option>
+                  {goals.map((goal) => (
+                    <option key={goal.id} value={goal.id}>
+                      {goal.title}
+                    </option>
+                  ))}
+                </select>
               </Field>
             )}
 

@@ -18,9 +18,9 @@ vi.mock("../savedTaskViewsApi", () => ({
     },
     {
       id: 2,
-      name: "Home",
-      icon: "🏠",
-      filters: { labels: ["home"] },
+      name: "Mine",
+      icon: "👤",
+      filters: { assignee: "user" },
       group_by: "none",
       sort_index: 1,
       is_default: false,
@@ -28,9 +28,9 @@ vi.mock("../savedTaskViewsApi", () => ({
   ]),
   createView: vi.fn().mockResolvedValue({
     id: 2,
-    name: "Home",
-    icon: "🏠",
-    filters: { labels: ["home"] },
+    name: "Mine",
+    icon: "👤",
+    filters: { assignee: "user" },
     group_by: "none",
     sort_index: 1,
     is_default: false,
@@ -64,8 +64,8 @@ function UrlProbeHarness() {
       <div data-testid="search">{location.search}</div>
       <div data-testid="filters">{JSON.stringify(state.workingFilters)}</div>
       <div data-testid="dirty">{String(state.dirty)}</div>
-      <button type="button" onClick={() => state.editFilters({ labels: [] })}>
-        Clear labels
+      <button type="button" onClick={() => state.editFilters({ due: "today" })}>
+        Today
       </button>
     </>
   );
@@ -85,7 +85,7 @@ describe("useSavedTaskViews", () => {
       wrapper: wrapperFor(),
     });
     await waitFor(() => expect(result.current.views.length).toBe(2));
-    act(() => result.current.editFilters({ labels: ["x"] }));
+    act(() => result.current.editFilters({ due: "today" }));
     expect(result.current.dirty).toBe(true);
   });
 
@@ -99,7 +99,6 @@ describe("useSavedTaskViews", () => {
     expect(result.current.activeView.id).toBe(1);
     expect(result.current.workingFilters).toEqual({
       statuses: ["open", "scheduled"],
-      labels: ["home"],
       assignee: "user",
       due: "today",
     });
@@ -113,32 +112,34 @@ describe("useSavedTaskViews", () => {
     });
     await waitFor(() => expect(result.current.views.length).toBe(2));
     expect(result.current.activeView.id).toBe(2);
-    expect(result.current.workingFilters).toEqual({ labels: ["home"] });
+    expect(result.current.workingFilters).toEqual({ assignee: "user" });
     expect(result.current.dirty).toBe(false);
   });
 
-  it("round-trips explicitly cleared saved-view filters through the URL", async () => {
+  it("drops legacy label params while round-tripping current filters", async () => {
     render(
-      <MemoryRouter initialEntries={["/tasks?view=2"]}>
+      <MemoryRouter initialEntries={["/tasks?view=2&labels=home"]}>
         <UrlProbeHarness />
       </MemoryRouter>,
     );
 
     await waitFor(() =>
       expect(screen.getByTestId("filters").textContent).toBe(
-        JSON.stringify({ labels: ["home"] }),
+        JSON.stringify({ assignee: "user" }),
       ),
     );
 
-    act(() => screen.getByRole("button", { name: "Clear labels" }).click());
+    act(() => screen.getByRole("button", { name: "Today" }).click());
 
     await waitFor(() => {
       expect(screen.getByTestId("filters").textContent).toBe(
-        JSON.stringify({ labels: [] }),
+        JSON.stringify({ assignee: "user", due: "today" }),
       );
       const search = screen.getByTestId("search").textContent ?? "";
       expect(search).toContain("view=2");
-      expect(search).toContain("labels=");
+      expect(search).toContain("assignee=user");
+      expect(search).toContain("due=today");
+      expect(search).not.toContain("labels=");
       expect(screen.getByTestId("dirty").textContent).toBe("true");
     });
   });
@@ -159,13 +160,13 @@ describe("useSavedTaskViews", () => {
     expect(result.current.views[1].sort_index).toBe(1);
   });
 
-  it("hydrates explicitly cleared saved-view filters from the URL", async () => {
+  it("ignores explicitly cleared legacy label filters from the URL", async () => {
     const { result } = renderHook(() => useSavedTaskViews(), {
       wrapper: wrapperFor("/tasks?view=2&labels=&group=none"),
     });
     await waitFor(() => expect(result.current.views.length).toBe(2));
     expect(result.current.activeView.id).toBe(2);
-    expect(result.current.workingFilters).toEqual({ labels: [] });
-    expect(result.current.dirty).toBe(true);
+    expect(result.current.workingFilters).toEqual({ assignee: "user" });
+    expect(result.current.dirty).toBe(false);
   });
 });

@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 from app.chat.models import ChatSession, Message
 from app.chat import pubsub
 from app.datetime_utils import normalize_to_naive_utc, utc_now
-from app.labels.models import Label, TaskLabel
 from app.notifications import service as notify_service
 from app.tasks.models import Assignee, IntervalUnit, Task
 from app.tasks.schemas import TaskCreate, TaskUpdate, task_to_read
@@ -68,15 +67,36 @@ def _next_do_at(prev_do_at: datetime | None, unit: IntervalUnit, count: int) -> 
     return base + _INTERVAL_TO_TIMEDELTA[unit](count)
 
 
-def _resolve_labels(session: Session, slugs: list[str]) -> list[Label]:
-    """Map a list of slug strings to Label rows; raise on any unknown slug."""
-    if not slugs:
-        return []
-    found = list(session.scalars(select(Label).where(Label.slug.in_(slugs))))
-    missing = set(slugs) - {label.slug for label in found}
-    if missing:
-        raise ValueError(f"unknown labels: {sorted(missing)}")
-    return found
+def _ensure_goal_exists(session: Session, goal_id: int | None) -> int | None:
+    if goal_id is None:
+        return None
+    from app.goals.models import Goal
+
+    if session.get(Goal, goal_id) is None:
+        raise ValueError(f"unknown goal_id: {goal_id}")
+    return goal_id
+
+
+def _append_goal_event(
+    session: Session,
+    goal_id: int | None,
+    *,
+    kind: str,
+    body: str,
+    task_id: int,
+) -> None:
+    if goal_id is None:
+        return
+    from app.goals import service as goals_service
+
+    goals_service.append_goal_event(
+        session,
+        goal_id,
+        kind=kind,
+        body=body,
+        task_id=task_id,
+        commit=False,
+    )
 
 
 def _today_window() -> tuple[datetime, datetime]:
@@ -116,21 +136,11 @@ def _last_msg_subq():
 def _apply_common_filters(
     stmt: Select[Any],
     *,
-    labels: list[str] | None,
     assignee: Assignee | None,
     due: DueWindow | None,
 ) -> Select[Any]:
-    """Label / assignee / due-window filters shared by the open and done
-    listing paths. Status predicates stay inline in `list_tasks` (legacy
-    path only)."""
-    if labels:
-        stmt = stmt.where(
-            Task.id.in_(
-                select(TaskLabel.task_id)
-                .join(Label, Label.id == TaskLabel.label_id)
-                .where(Label.slug.in_(labels))
-            )
-        )
+    """Assignee / due-window filters shared by the open and done listing paths.
+    Status predicates stay inline in `list_tasks` (legacy path only)."""
     if assignee:
         stmt = stmt.where(Task.assignee == assignee)
     if due == "today":
@@ -161,7 +171,6 @@ def _decode_done_cursor(cursor: str) -> tuple[datetime, int]:
 def list_tasks(
     session: Session,
     *,
-    labels: list[str] | None = None,
     assignee: Assignee | None = None,
     statuses: list[TaskStatus] | None = None,
     due: DueWindow | None = None,
@@ -179,7 +188,7 @@ def list_tasks(
     - ``True``  – done tasks only, completed_at desc (unpaginated; the
       paginated tail goes through `list_done_tasks`).
     """
-    stmt = _apply_common_filters(select(Task), labels=labels, assignee=assignee, due=due)
+    stmt = _apply_common_filters(select(Task), assignee=assignee, due=due)
     if statuses:
         stmt = stmt.where(status_predicate(list(statuses)))
 
@@ -213,7 +222,6 @@ def list_tasks(
 def list_done_tasks(
     session: Session,
     *,
-    labels: list[str] | None = None,
     assignee: Assignee | None = None,
     due: DueWindow | None = None,
     cursor: str | None = None,
@@ -227,7 +235,6 @@ def list_done_tasks(
     """
     stmt = _apply_common_filters(
         select(Task).where(Task.is_done.is_(True)),
-        labels=labels,
         assignee=assignee,
         due=due,
     )
@@ -296,7 +303,7 @@ def create_task(session: Session, data: TaskCreate) -> Task:
     insert; the back-pointer is wired right after. The reverse FK has
     a CASCADE so deleting either end drops the pair.
     """
-    label_objs = _resolve_labels(session, data.labels)
+    goal_id = _ensure_goal_exists(session, data.goal_id)
 
     chat = ChatSession(title=data.title[:128])
     session.add(chat)
@@ -325,11 +332,18 @@ def create_task(session: Session, data: TaskCreate) -> Task:
         due_at=normalize_to_naive_utc(data.due_at),
         interval_unit=data.interval_unit,
         interval_count=data.interval_count,
+        goal_id=goal_id,
         task_log_line=task_log_line,
     )
-    task.labels = label_objs
     session.add(task)
     session.flush()  # populate task.id
+    _append_goal_event(
+        session,
+        goal_id,
+        kind="task_linked",
+        body=f"Task linked: {task.title}",
+        task_id=task.id,
+    )
 
     chat.task_id = task.id
     session.commit()
@@ -356,18 +370,14 @@ def update_task(
     for key in ("do_at", "due_at", "completed_at", "due_notified_at"):
         if key in data:
             data[key] = normalize_to_naive_utc(data[key])
-    # labels is a relationship — resolve it separately and apply after the
-    # scalar columns; don't try to setattr a list[str] onto task.labels.
-    new_labels: list[Label] | None = None
-    if "labels" in data:
-        new_labels = _resolve_labels(session, data.pop("labels"))
+    if "goal_id" in data:
+        data["goal_id"] = _ensure_goal_exists(session, data["goal_id"])
     prev_done = task.is_done
     prev_assignee = task.assignee
     prev_do_at = task.do_at
+    prev_goal_id = task.goal_id
     for key, value in data.items():
         setattr(task, key, value)
-    if new_labels is not None:
-        task.labels = new_labels
     if task.interval_unit is None or task.interval_count is None:
         task.task_log_line = None
     # If this update tipped the task into "recurring assistant" without
@@ -389,16 +399,50 @@ def update_task(
         # fire again at the new deadline.
         task.due_notified_at = None
     just_completed = False
+    just_reopened = False
     if "is_done" in data:
         if task.is_done and not prev_done:
             task.completed_at = utc_now()
             just_completed = True
         elif not task.is_done and prev_done:
             task.completed_at = None
+            just_reopened = True
 
     spawned: Task | None = None
     if just_completed and task.interval_unit is not None and task.interval_count is not None:
         spawned = _spawn_next_recurrence(session, task, prev_do_at)
+
+    if "goal_id" in data and task.goal_id != prev_goal_id:
+        _append_goal_event(
+            session,
+            prev_goal_id,
+            kind="task_unlinked",
+            body=f"Task unlinked: {task.title}",
+            task_id=task.id,
+        )
+        _append_goal_event(
+            session,
+            task.goal_id,
+            kind="task_linked",
+            body=f"Task linked: {task.title}",
+            task_id=task.id,
+        )
+    if just_completed:
+        _append_goal_event(
+            session,
+            task.goal_id,
+            kind="task_completed",
+            body=f"Task completed: {task.title}",
+            task_id=task.id,
+        )
+    elif just_reopened:
+        _append_goal_event(
+            session,
+            task.goal_id,
+            kind="task_reopened",
+            body=f"Task reopened: {task.title}",
+            task_id=task.id,
+        )
 
     handed_to_user = prev_assignee == "assistant" and task.assignee == "user"
     handed_to_assistant = prev_assignee != "assistant" and task.assignee == "assistant"
@@ -528,13 +572,11 @@ def _spawn_next_recurrence(session: Session, completed: Task, prev_do_at: dateti
         do_at=next_do_at,
         interval_unit=completed.interval_unit,
         interval_count=completed.interval_count,
+        goal_id=completed.goal_id,
         # Carry the task-log identity forward so cycle N+1 reads/writes
         # the same `Task Log/<line>.md` note as cycle N.
         task_log_line=completed.task_log_line,
     )
-    # Carry the labels forward so the next cycle shows up in the same
-    # filter buckets as its predecessor.
-    new_task.labels = list(completed.labels)
     session.add(new_task)
     session.flush()
     new_chat.task_id = new_task.id

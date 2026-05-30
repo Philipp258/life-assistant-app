@@ -30,7 +30,6 @@ def create_view(body: SavedTaskViewCreate) -> SavedTaskViewRead:
         icon = pick_emoji_for_view(
             name=body.name,
             filters=body.filters,
-            labels=body.filters.get("labels", []),
         )
     body_with_icon = body.model_copy(update={"icon": icon})
     with SessionLocal() as session:

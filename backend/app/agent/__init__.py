@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models import Model
+from sqlalchemy.orm import selectinload
 
 from app.agent.deps import AgentDeps
 from app.agent.providers.codex import build_codex_model
@@ -17,6 +18,7 @@ from app.agent.safe_tools import install as install_safe_tools
 from app.agent.tools import archived_messages as archived_message_tools
 from app.agent.tools import chats as chat_tools
 from app.agent.tools import fs as fs_tools
+from app.agent.tools import goals as goal_tools
 from app.agent.tools import knowledge as knowledge_tools
 from app.agent.tools import onboarding as onboarding_tools
 from app.agent.tools import sessions as session_tools
@@ -42,9 +44,9 @@ APP_CONTEXT_PROMPT = """\
 ## App context
 
 Life Assistant is a personal-assistant app the user runs for themselves. \
-It has chats, tasks, knowledge notes, core memory, and skills. Main chat \
+It has chats, goals, tasks, knowledge notes, core memory, and skills. Main chat \
 is for conversation and coordination; task chats hold focused work. Tasks, \
-knowledge notes, and core memory are durable sources of truth; chat \
+goals, knowledge notes, and core memory are durable sources of truth; chat \
 scrollback is conversational context."""
 
 
@@ -68,6 +70,10 @@ When mentioning a task in a user-facing message, link it as Markdown: \
 `[<task title>](/tasks/<id>)`. Use bare `/tasks/<id>` only when Markdown \
 would be awkward.
 
+When mentioning a goal in a user-facing message, link it as Markdown: \
+`[<goal title>](/goals/<id>)`. Use bare `/goals/<id>` only when Markdown \
+would be awkward.
+
 When mentioning a knowledge note in a user-facing message, link it as \
 Markdown using the public app route: `[<note title>](/know/open/<path>)`. \
 Encode each path segment for a URL, e.g. \
@@ -87,6 +93,29 @@ When the user answers or redirects a running task, use \
 
 Main chat coordinates task work; it should not supervise task execution by \
 watching task chats. Task chats report back through lifecycle handoffs."""
+
+
+GOALS_PROMPT = """\
+## How goals work
+
+Goals are durable long-lived outcomes or projects. Tasks are concrete next \
+actions. Use a goal when the user is describing an outcome that will take \
+multiple steps, needs continuity over time, or should remain visible after \
+one task is done. Use a task when there is a specific next action with an \
+owner, schedule, or deadline.
+
+Goals do not have their own chats. Main chat coordinates goals directly and \
+task chats do the focused work. Link a task to a goal with `goal_id` when \
+the task is a concrete step under that outcome.
+
+Complete goals explicitly with `update_goal(is_done=True)` only when the \
+outcome itself is done, not merely because one linked task finished. Reopen \
+with `update_goal(is_done=False)` when the outcome becomes active again.
+
+When a linked task handoff arrives in main chat, use the goal context to \
+decide whether to update the goal, append a goal event, ask the user a \
+question, create a next task, or stay silent. Routine task completion can \
+stay silent when it does not change what the user needs to know."""
 
 
 # Tools are scoped by mutation/egress, not raw/not-raw: inspect tools are
@@ -179,7 +208,7 @@ add detail only if useful."""
 IMPROVE_ASSISTANT_PROMPT = """\
 Self-improvement only runs when the user explicitly asks for \
 self-improvement or asks to treat something as an improvement. Then create \
-an assistant task with `labels=['improve-life-assistant']` and put the \
+an assistant task and put the \
 evidence in the description: what happened, what was off, and why it matters.
 
 That task follows the `improve-life-assistant` skill: classify the evidence, \
@@ -196,6 +225,7 @@ HOW_TASKS_WORK = """## How tasks work
 
 Fields:
 - title, description: free-form context for the run. Editable via `update_task` (e.g. when the user refines what they want).
+- goal_id: optional parent goal. Use it when the task is a concrete next step under a durable outcome.
 - assignee: 'assistant' = autonomous loop in this task's chat. 'user' = paused, ball in user's court.
 - do_at: START trigger. The runner only wakes an assistant-assigned task once `do_at <= now`. Use this for scheduled jobs and reminders ("Saturday 9am: groceries" → do_at=Sat 09:00, assignee='assistant').
 - due_at: DEADLINE. User-facing only — the runner ignores it. Use for "by tomorrow", "before Friday". Surface it in your messages so the user knows you remember the deadline.
@@ -301,7 +331,9 @@ def _task_for_session(session_id: int | None) -> Task | None:
         chat = db.get(ChatSession, session_id)
         if chat is None or chat.task_id is None:
             return None
-        return db.get(Task, chat.task_id)
+        return (
+            db.query(Task).options(selectinload(Task.goal)).filter(Task.id == chat.task_id).first()
+        )
 
 
 def _session_kind(session_id: int | None) -> str:
@@ -384,6 +416,10 @@ def build_system_prompt(session_id: int | None, *, voice_mode: bool = False) -> 
     exposes_task_log = False
     if task is not None:
         fields = [f"- task_id: {task.id}", f"- title: {task.title}"]
+        if task.goal_id is not None:
+            fields.append(f"- goal_id: {task.goal_id}")
+            if task.goal is not None:
+                fields.append(f"- goal_title: {task.goal.title}")
         if task.description and task.description.strip():
             fields.append(f"- description: {task.description.strip()}")
         if task.do_at is not None:
@@ -411,6 +447,7 @@ def build_system_prompt(session_id: int | None, *, voice_mode: bool = False) -> 
 
     common_tail = [
         TASK_LINK_PROMPT,
+        GOALS_PROMPT,
         HOW_TASKS_WORK,
         f"## Improving {name}\n\n{IMPROVE_ASSISTANT_PROMPT}",
         f"## About you\n\n{about}",
@@ -475,6 +512,7 @@ def _build_agent() -> Agent[AgentDeps, str]:
             tz = ZoneInfo("UTC")
         return datetime.now(tz).isoformat()
 
+    goal_tools.register(agent)
     task_tools.register(agent)
     chat_tools.register(agent)
     session_tools.register(agent)

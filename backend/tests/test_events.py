@@ -102,6 +102,42 @@ def test_handoff_from_any_task_reaches_main(_test_db):
     assert "/tasks/" in blob  # link line present
 
 
+def test_handoff_from_goal_linked_task_includes_goal_context(_test_db):
+    from app.goals.models import Goal
+
+    Session = _test_db
+    with Session() as s:
+        goal = Goal(title="Ship goals MVP")
+        chat = ChatSession()
+        s.add_all([goal, chat])
+        s.flush()
+        task = Task(
+            title="Write goal UI",
+            assignee="assistant",
+            chat_session_id=chat.id,
+            goal_id=goal.id,
+        )
+        s.add(task)
+        s.flush()
+        chat.task_id = task.id
+        s.commit()
+        chat_id = chat.id
+        goal_id = goal.id
+
+    with Session() as s:
+        save_task_handoff(s, chat_id, "The UI is ready.")
+        main_id = get_or_create_main_session(s).id
+
+    with Session() as s:
+        injected, seen = events.drain_terminal_events(s, main_id)
+
+    assert len(seen) == 1
+    blob = _handoff_blob(injected)
+    assert f"goal_id: {goal_id}" in blob
+    assert "goal_title: Ship goals MVP" in blob
+    assert f"goal_link: /goals/{goal_id}" in blob
+
+
 def test_all_task_origins_drain_in_one_pass(_test_db):
     Session = _test_db
     a = _task_chat(Session, title="Task A")
@@ -208,6 +244,9 @@ def test_injection_prompt_frames_triage_and_silence(_test_db):
     assert "do_nothing" in text
     assert "routine internal status" in text
     assert "unsure, surface" in text
+    assert "direct main-chat reply to the user" in text
+    assert "not a status report about the user or the task" in text
+    assert "what the user can think about next" in text
     assert "do not re-answer or continue earlier conversation" in text
     # No standing "always reply" mandate (the old noise bug).
     assert "Reply to the user with what they need to know" not in text

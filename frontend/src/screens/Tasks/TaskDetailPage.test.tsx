@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 
 import { EditTaskSheet } from "./EditTaskSheet";
 import {
@@ -26,8 +27,9 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     description: "Test description",
     is_done: false,
     assignee: "user",
-    labels: [],
     chat_session_id: 10,
+    goal_id: null,
+    goal_title: null,
     do_at: null,
     due_at: null,
     interval_unit: null,
@@ -233,6 +235,14 @@ describe("CompactTaskHeader — done task", () => {
 });
 
 describe("TaskMetadataSummary", () => {
+  function renderSummary(task: Task) {
+    render(
+      <MemoryRouter>
+        <TaskMetadataSummary task={task} />
+      </MemoryRouter>,
+    );
+  }
+
   it("shows assignee, do_at, due_at, recurrence and status", () => {
     const task = makeTask({
       assignee: "assistant",
@@ -243,7 +253,7 @@ describe("TaskMetadataSummary", () => {
       kind: "routine",
       state: "running",
     });
-    render(<TaskMetadataSummary task={task} />);
+    renderSummary(task);
     const summary = screen.getByTestId("task-metadata-summary");
     expect(summary).toHaveTextContent("Nix");
     expect(summary).toHaveTextContent(/Next run/i);
@@ -253,10 +263,16 @@ describe("TaskMetadataSummary", () => {
   });
 
   it("falls back to 'On you' when user-assigned and not done", () => {
-    render(<TaskMetadataSummary task={makeTask()} />);
+    renderSummary(makeTask());
     expect(screen.getByTestId("task-metadata-summary")).toHaveTextContent(
       /On you/i,
     );
+  });
+
+  it("links to the parent goal when present", () => {
+    renderSummary(makeTask({ goal_id: 9, goal_title: "Ship goals MVP" }));
+    const link = screen.getByRole("link", { name: "Ship goals MVP" });
+    expect(link).toHaveAttribute("href", "/goals/9");
   });
 });
 

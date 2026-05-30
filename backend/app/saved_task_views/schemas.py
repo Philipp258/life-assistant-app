@@ -12,14 +12,21 @@ Assignee = Literal["user", "assistant"]
 TaskStatus = Literal["open", "scheduled", "waiting", "done"]
 DueWindow = Literal["today", "week"]
 
-_ALLOWED_FILTER_KEYS = {"labels", "assignee", "statuses", "due"}
+_ALLOWED_FILTER_KEYS = {"assignee", "statuses", "due"}
 
 
 class FilterBlob(BaseModel):
-    labels: list[str] | None = None
     assignee: Assignee | None = None
     statuses: list[TaskStatus] | None = None
     due: DueWindow | None = None
+
+
+def strip_removed_filters(filters: dict[str, Any] | None) -> dict[str, Any]:
+    if not filters:
+        return {}
+    out = dict(filters)
+    out.pop("labels", None)
+    return out
 
 
 class SavedTaskViewBase(BaseModel):
@@ -30,6 +37,7 @@ class SavedTaskViewBase(BaseModel):
 
     @model_validator(mode="after")
     def _validate_filter_shape(self) -> "SavedTaskViewBase":
+        self.filters = strip_removed_filters(self.filters)
         bad = set(self.filters.keys()) - _ALLOWED_FILTER_KEYS
         if bad:
             raise ValueError(f"unknown filter keys: {sorted(bad)}")
@@ -52,6 +60,7 @@ class SavedTaskViewUpdate(BaseModel):
     @model_validator(mode="after")
     def _validate_filter_shape(self) -> "SavedTaskViewUpdate":
         if self.filters is not None:
+            self.filters = strip_removed_filters(self.filters)
             bad = set(self.filters.keys()) - _ALLOWED_FILTER_KEYS
             if bad:
                 raise ValueError(f"unknown filter keys: {sorted(bad)}")
@@ -75,7 +84,7 @@ class SavedTaskViewRead(SavedTaskViewBase):
                 "id": row.id,
                 "name": row.name,
                 "icon": row.icon,
-                "filters": row.filters_json or {},
+                "filters": strip_removed_filters(row.filters_json),
                 "group_by": "none",
                 "sort_index": row.sort_index,
                 "is_default": row.is_default,

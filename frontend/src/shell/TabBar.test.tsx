@@ -6,16 +6,23 @@ import { describe, expect, it } from "vitest";
 import { TabBar } from "./TabBar";
 
 describe("TabBar", () => {
-  it("renders the four tab labels", () => {
+  it("renders the tab labels", () => {
     render(
       <MemoryRouter>
         <TabBar />
       </MemoryRouter>,
     );
 
-    for (const label of ["Chat", "Tasks", "Knowledge", "Agent"]) {
+    for (const label of ["Chat", "Goals", "Tasks", "Knowledge", "Agent"]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
+    expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "Chat",
+      "Tasks",
+      "Goals",
+      "Knowledge",
+      "Agent",
+    ]);
   });
 
   it("restores the last task list URL when returning from Chat", async () => {
@@ -25,7 +32,7 @@ describe("TabBar", () => {
     }
 
     render(
-      <MemoryRouter initialEntries={["/tasks?view=2&statuses=open&labels=home"]}>
+      <MemoryRouter initialEntries={["/tasks?view=2&statuses=open&assignee=user"]}>
         <Routes>
           <Route
             path="*"
@@ -45,7 +52,7 @@ describe("TabBar", () => {
 
     await userEvent.click(screen.getByText("Tasks"));
     expect(screen.getByTestId("location")).toHaveTextContent(
-      "/tasks?view=2&statuses=open&labels=home",
+      "/tasks?view=2&statuses=open&assignee=user",
     );
   });
 });

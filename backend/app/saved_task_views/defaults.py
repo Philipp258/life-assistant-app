@@ -32,13 +32,12 @@ LEGACY_MAIN_VIEW_NAME = "main"
 LEGACY_MAIN_VIEW_FILTERS: dict[str, object] = {
     "due": None,
     "statuses": ["open", "scheduled", "waiting"],
-    "labels": [],
 }
 LEGACY_ASSISTANTS_VIEW_NAME = "assistants"
 LEGACY_ASSISTANTS_VIEW_FILTERS: dict[str, object] = {
     "due": None,
     "statuses": ["open", "scheduled", "waiting"],
-    "labels": ["assistant-app"],
+    "assignee": "assistant",
 }
 
 INBOX_VIEW_NAME = "Inbox"

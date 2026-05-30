@@ -17,8 +17,9 @@ export type Task = {
   description: string | null;
   is_done: boolean;
   assignee: Assignee;
-  labels: string[];
   chat_session_id: number;
+  goal_id: number | null;
+  goal_title: string | null;
   do_at: string | null;
   due_at: string | null;
   interval_unit: IntervalUnit | null;
@@ -36,11 +37,11 @@ export type TaskCreate = {
   title: string;
   description?: string | null;
   assignee?: Assignee;
-  labels?: string[];
   do_at?: string | null;
   due_at?: string | null;
   interval_unit?: IntervalUnit | null;
   interval_count?: number | null;
+  goal_id?: number | null;
 };
 
 export type TaskUpdate = Partial<{
@@ -48,15 +49,14 @@ export type TaskUpdate = Partial<{
   description: string | null;
   is_done: boolean;
   assignee: Assignee;
-  labels: string[];
   do_at: string | null;
   due_at: string | null;
   interval_unit: IntervalUnit | null;
   interval_count: number | null;
+  goal_id: number | null;
 }>;
 
 export type ListTasksParams = {
-  labels?: string[];
   assignee?: "user" | "assistant" | null;
   statuses?: ("open" | "scheduled" | "waiting" | "done")[];
   due?: "today" | "week" | null;
@@ -67,7 +67,6 @@ export type ListTasksParams = {
 
 function buildTaskQuery(params: ListTasksParams): URLSearchParams {
   const qs = new URLSearchParams();
-  params.labels?.forEach((l) => qs.append("label", l));
   params.statuses?.forEach((s) => qs.append("status", s));
   if (params.assignee) qs.append("assignee", params.assignee);
   if (params.due) qs.append("due", params.due);

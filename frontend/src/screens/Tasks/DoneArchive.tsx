@@ -29,7 +29,6 @@ export type DoneArchiveProps = {
 
 export function doneArchiveFilters(filters: ListTasksParams): ArchiveFilters {
   return {
-    labels: filters.labels,
     assignee: filters.assignee,
     due: filters.due,
   };

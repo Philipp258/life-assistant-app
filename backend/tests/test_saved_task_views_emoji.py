@@ -14,7 +14,7 @@ def test_extract_one_emoji_returns_none_when_absent():
 def test_pick_emoji_for_view_returns_extracted(monkeypatch):
     fake = MagicMock(return_value="✨")
     monkeypatch.setattr(emoji, "_run_llm", fake)
-    out = emoji.pick_emoji_for_view(name="Home", filters={"labels": ["home"]})
+    out = emoji.pick_emoji_for_view(name="Mine", filters={"assignee": "user"})
     assert out == "✨"
     fake.assert_called_once()
 

@@ -55,6 +55,17 @@ export const IconTask = withSize(
   </>,
 );
 
+export const IconGoal = withSize(
+  22,
+  22,
+  "0 0 24 24",
+  <>
+    <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth={STROKE_DEFAULT} />
+    <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth={STROKE_DEFAULT} />
+    <circle cx="12" cy="12" r="1.4" fill="currentColor" />
+  </>,
+);
+
 export const IconBook = withSize(
   20,
   20,

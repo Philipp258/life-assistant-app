@@ -20,11 +20,10 @@ from app.chat.router import router as chat_router
 from app.chat.service import get_or_create_main_session
 from app.config import FRONTEND_DIST, KNOWLEDGE_DIR, SKILLS_DIR, settings
 from app.db import SessionLocal, engine
+from app.goals.router import router as goals_router
 from app.health.router import router as health_router
 from app.knowledge import core as core_memory
 from app.knowledge.router import router as knowledge_router
-from app.labels.defaults import ensure_default_labels
-from app.labels.router import router as labels_router
 from app.notifications import due_scheduler
 from app.notifications.router import router as notifications_router
 from app.observability import flush_observability, setup_observability, setup_sentry
@@ -45,7 +44,6 @@ from app.voice.router import router as voice_router
 
 def seed_repo_defaults(db: Session) -> None:
     """Materialize repo-shipped defaults that should exist on every install."""
-    ensure_default_labels(db)
     ensure_default_routines(db)
     ensure_default_saved_views(db)
 
@@ -154,7 +152,7 @@ app.include_router(health_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
 app.include_router(tasks_router, prefix="/api")
-app.include_router(labels_router, prefix="/api")
+app.include_router(goals_router, prefix="/api")
 app.include_router(saved_task_views_router, prefix="/api")
 app.include_router(knowledge_router, prefix="/api")
 app.include_router(skills_router, prefix="/api")

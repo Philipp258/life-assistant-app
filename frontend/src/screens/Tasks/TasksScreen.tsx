@@ -7,9 +7,6 @@ import { IconPlus } from "@/shell/icons";
 import { useIdentity } from "@/shell/identity";
 import { cn } from "@/lib/utils";
 
-import { ManageLabelsSheet } from "@/screens/Labels/ManageLabelsSheet";
-import { listLabels, type Label } from "@/screens/Labels/labelsApi";
-
 import { FilterSheet } from "./SavedTaskViews/FilterSheet";
 import { SavedTaskViewTabs } from "./SavedTaskViews/SavedTaskViewTabs";
 import { useSavedTaskViews } from "./SavedTaskViews/useSavedTaskViews";
@@ -43,7 +40,6 @@ function filterCount(filter: FilterBlob): number {
   if (filter.assignee) n += 1;
   if (filter.due) n += 1;
   n += filter.statuses?.length ?? 0;
-  n += filter.labels?.length ?? 0;
   return n;
 }
 
@@ -53,12 +49,10 @@ export function TasksScreen() {
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
-  const [labelsOpen, setLabelsOpen] = useState(false);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [namePromptOpen, setNamePromptOpen] = useState(false);
   const [newViewName, setNewViewName] = useState("");
   const nameInputRef = useRef<HTMLInputElement>(null);
-  const [labels, setLabels] = useState<Label[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeSessionIds, setActiveSessionIds] = useState<Set<number>>(
     () => new Set(),
@@ -117,12 +111,6 @@ export function TasksScreen() {
   useEffect(() => {
     refresh();
   }, [refresh]);
-
-  useEffect(() => {
-    listLabels()
-      .then(setLabels)
-      .catch(() => setLabels([]));
-  }, [labelsOpen]);
 
   // Poll the runner's active set so the user can see at a glance which
   // tasks the assistant is mid-turn on. Cheap (in-memory on the backend), small
@@ -305,13 +293,6 @@ export function TasksScreen() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setLabelsOpen(true)}
-              className="rounded-full border border-life-line bg-life-card px-3 py-1.5 text-[12px] font-medium text-life-ink-2"
-            >
-              Labels
-            </button>
-            <button
-              type="button"
               onClick={() => setComposerOpen(true)}
               className="flex items-center gap-1.5 rounded-full bg-life-accent px-3.5 py-2 text-[13px] font-medium text-white"
             >
@@ -424,15 +405,9 @@ export function TasksScreen() {
         onCreate={handleCreate}
       />
 
-      <ManageLabelsSheet
-        open={labelsOpen}
-        onClose={() => setLabelsOpen(false)}
-      />
-
       <FilterSheet
         open={filterSheetOpen}
         value={workingFilters}
-        labels={labels}
         assistantName={assistantName}
         onChange={editFilters}
         onClose={() => setFilterSheetOpen(false)}

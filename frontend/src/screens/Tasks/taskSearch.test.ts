@@ -10,8 +10,9 @@ function t(overrides: Partial<Task>): Task {
     description: null,
     is_done: false,
     assignee: "user",
-    labels: [],
     chat_session_id: 0,
+    goal_id: null,
+    goal_title: null,
     do_at: null,
     due_at: null,
     interval_unit: null,
@@ -50,11 +51,6 @@ describe("matchesTaskSearch", () => {
   it("matches on description", () => {
     const task = t({ title: "Errand", description: "Buy groceries at the corner" });
     expect(matchesTaskSearch(task, "groceries")).toBe(true);
-  });
-
-  it("matches on labels by slug or display form", () => {
-    const task = t({ title: "Shop", labels: ["home-stuff"] });
-    expect(matchesTaskSearch(task, "home")).toBe(true);
   });
 
   it("requires all tokens to be present (AND semantics)", () => {

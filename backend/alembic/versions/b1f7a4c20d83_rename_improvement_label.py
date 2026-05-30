@@ -29,11 +29,12 @@ NEW_SLUG = "improve-life-assistant"
 
 
 def upgrade() -> None:
-    op.execute(
-        sa.text(
-            "UPDATE labels SET slug = :new, name = 'Improve the assistant' WHERE slug = :old"
-        ).bindparams(old=OLD_SLUG, new=NEW_SLUG)
-    )
+    if sa.inspect(op.get_bind()).has_table("labels"):
+        op.execute(
+            sa.text(
+                "UPDATE labels SET slug = :new, name = 'Improve the assistant' WHERE slug = :old"
+            ).bindparams(old=OLD_SLUG, new=NEW_SLUG)
+        )
     op.execute(
         sa.text(
             "UPDATE tasks SET description = REPLACE(description, :old, :new) "
@@ -43,11 +44,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        sa.text("UPDATE labels SET slug = :old WHERE slug = :new").bindparams(
-            old=OLD_SLUG, new=NEW_SLUG
+    if sa.inspect(op.get_bind()).has_table("labels"):
+        op.execute(
+            sa.text("UPDATE labels SET slug = :old WHERE slug = :new").bindparams(
+                old=OLD_SLUG, new=NEW_SLUG
+            )
         )
-    )
     op.execute(
         sa.text(
             "UPDATE tasks SET description = REPLACE(description, :new, :old) "

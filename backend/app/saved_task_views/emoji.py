@@ -20,7 +20,6 @@ _PROMPT = (
     "Reply with the single emoji character only — no words, no punctuation.\n"
     "View name: {name}\n"
     "Filters: {filters}\n"
-    "Labels: {labels}\n"
 )
 
 
@@ -62,13 +61,11 @@ def pick_emoji_for_view(
     *,
     name: str,
     filters: dict[str, Any],
-    labels: list[str] | None = None,
     timeout_s: float = 3.0,
 ) -> str | None:
     prompt = _PROMPT.format(
         name=name,
         filters=filters,
-        labels=labels or [],
     )
     try:
         raw = _run_llm(prompt, timeout_s=timeout_s)
