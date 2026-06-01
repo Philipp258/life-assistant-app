@@ -1,47 +1,27 @@
 # Life Assistant
 
-A personal AI assistant you run on your own machine. It is one app for chat,
-tasks, reminders, knowledge, skills, voice, and agent work you can actually
-inspect.
+A personal AI assistant controlling its own machine like Openclaw,
+but with some changes and extensions I was personally missing:
 
-## What makes it different
-
-- **Autonomous task work.** The assistant can turn a request into a task,
-  work on it in the background, pause when it needs your input, and hand the
-  result back to the main chat. Tasks can run now, later, or on a recurring
-  schedule.
-- **Observable by default.** Tool calls, task chats, accumulated knowledge,
-  skills, and assistant progress are visible in the UI instead of hidden behind
-  one opaque chat stream.
-- **Voice and notifications.** You can type or talk to the assistant, and push
-  notifications let reminders, handoffs, and important task updates reach you
-  even when the app is not open.
-- **Approval-gated self-improvement.** The assistant can notice mistakes or
-  recurring patterns and propose durable improvements. Those improvements land
-  in memory or skills only after you approve them, so it can get better without
-  quietly overfitting to one bad example.
-
-Memory is split deliberately: core memory holds stable facts and preferences,
-knowledge notes hold longer user-visible material, and skills teach the
-assistant how to handle specific kinds of work.
-
-## Use cases
-
-Dump tasks and ideas into the agent without being blocked or things becoming messy:
-
- - "Remind me Saturday morning to get groceries." — sets a scheduled task, the reminder lands in chat Saturday.
- - "Research the best espresso machine under €500, get back to me." — runs in the background, comes back with a recommendation.
- - "Do these 5 things: ..." — five separate tasks, each running on its own.
- - "Save the action items from /tmp/meeting.md as a note." — reads the file off the machine, keeps a knowledge note.
-
-{show gif}
-
-More worked examples: [`docs/cases/`](docs/cases/).
+ - highly interactive, non blocking main chat.
+  Real work happens in an observerable steerable task a subagent is working on.
+ So you can continously give it tasks without having to wait.
+ ![Screenshot 2026-05-31 at 19.00.59.png](readme/Screenshot%202026-05-31%20at%2019.00.59.png)
+The approach is similar to https://thinkingmachines.ai/blog/interaction-models/ though more simple and not as interactive.
+ - A task system the agent can manage for you. Tasks can be assigned to you are the assistant and support scheduling and repeating
+ - Goals as a way to group tasks and determine next steps
+ - An integrated file system like knowledge feature the assistant can manage for you
+ - Everything is observeable. Core memory, skills, knowldge, regular tasks, tools calls, etc.
+ - Approval gated self learning. I found most self learning systems tend to overfit to cases
+and build invisble unwanted rules. Life assistant agent is collecting and suggesting improvments
+regularly, but never without supervision.
+ - Experimental call feature for main chat
 
 
 ## Notes
 This is still quite early in development. It is working but might not be fully clean
-and smooth.
+and smooth. Especially self learning and voice calls are still
+being discovered
 
 
 ## Security
@@ -93,11 +73,6 @@ Supported chat providers:
 - OpenAI API
 - ChatGPT subscription through Codex auth
 
-OpenRouter is also used for voice transcription and can be used for voice
-replies; without it, spoken replies fall back to the browser's built-in voice.
-
-The default install gives you real HTTPS without buying a domain: sslip.io
-resolves `1-2-3-4.sslip.io` straight back to your VPS IP, and the cert is
-issued by Let's Encrypt directly to your machine, so traffic stays end-to-end
-between your browser and the server. If you prefer your own domain, or a
-tailnet-only deployment via Tailscale, see [`deploy/README.md`](deploy/README.md).
+Currently I find Openai subscription to work best.
+To use voice calls with a good voice, Openrouter is needed
+to do text to speech. Normally it does not cost much credit.
