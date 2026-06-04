@@ -148,9 +148,12 @@ def slot_env_command(slot: int) -> str:
     return "; ".join(parts)
 
 
-def codex_command(slot: int) -> str:
-    codex = shutil.which("codex") or str(Path.home() / ".local" / "bin" / "codex")
-    return f"{slot_env_command(slot)}; exec {shlex.quote(codex)}"
+def coding_agent_command(slot: int) -> str:
+    agent = os.environ.get("CODING_AGENT_CMD")
+    if not agent:
+        claude = shutil.which("claude") or str(Path.home() / ".local" / "bin" / "claude")
+        agent = shlex.quote(claude)
+    return f"{slot_env_command(slot)}; exec {agent}"
 
 
 def dev_command(slot: int) -> str:
@@ -338,9 +341,9 @@ def create_workspace(slot: int) -> str:
     describe_workspace(workspace_id, slot)
     pin_workspace(workspace_id)
 
-    codex_surface = first_surface(workspace_id)
-    rename_tab(codex_surface, "codex")
-    send_command(codex_surface, codex_command(slot))
+    agent_surface = first_surface(workspace_id)
+    rename_tab(agent_surface, "agent")
+    send_command(agent_surface, coding_agent_command(slot))
 
     return workspace_id
 
@@ -486,7 +489,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     ok = True
     print(f"cmux binary: {CMUX} {'ok' if CMUX.exists() else 'missing'}")
     print(
-        f"codex binary: {shutil.which('codex') or Path.home() / '.local' / 'bin' / 'codex'}"
+        f"coding agent: {os.environ.get('CODING_AGENT_CMD') or shutil.which('claude') or Path.home() / '.local' / 'bin' / 'claude'}"
     )
     for slot in parse_slots(args.slots):
         try:
@@ -504,7 +507,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command")
 
-    up = sub.add_parser("up", help="Create/reuse lightweight Codex workspaces")
+    up = sub.add_parser("up", help="Create/reuse lightweight coding-agent workspaces")
     up.add_argument("slots", nargs="*", help="Slot numbers, or 'all' (default)")
     up.add_argument(
         "--recreate", action="store_true", help="Close and rebuild matching workspaces"
