@@ -24,8 +24,8 @@ means the assistant's runtime agent.
 - `frontend/` — React 18 + Vite + TS + Tailwind, managed with `pnpm`.
   Tests via Vitest; some screens have Storybook stories.
 - `deploy/` — systemd units and install/update/backup scripts for the VPS.
-- `scripts/wtree.py` — git worktree + cmux workspace lifecycle for 
-  parallel branches.
+- `scripts/cmux_slots.py` — opens/reuses cmux workspaces for the six fixed
+  local slots under `/Users/philipp/Projects/life-assistant-app-slot-N`.
 
 ## Running things
 
