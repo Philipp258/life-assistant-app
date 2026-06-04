@@ -45,7 +45,9 @@ fixed-slot workflow. The Life Assistant slot contract is:
 Project helper commands:
 
 - `scripts/cmux_slots.py up [all|N...]` creates/reuses lightweight cmux
-  workspaces.
+  workspaces and starts the coding agent in the first surface. The agent
+  defaults to `claude`; override with the `CODING_AGENT_CMD` environment
+  variable.
 - `scripts/cmux_slots.py list` shows slot paths, ports, app status, and
   workspace ids.
 - `scripts/cmux_slots.py title N "short task"` sets the cmux workspace title.
