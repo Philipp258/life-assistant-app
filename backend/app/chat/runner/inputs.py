@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pydantic_ai.messages import UserPromptPart
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.chat.models import Message
 from app.chat.service import parse_message
@@ -48,9 +48,10 @@ def _session_has_pending_user_input(db: Session, session_id: int) -> bool:
         .where(Message.session_id == session_id, Message.archived_at.is_(None))
         .order_by(Message.id.desc())
         .limit(20)
+        .options(selectinload(Message.parts))
     ).all()
     for row in rows:
-        if row.kind != "request":
+        if row.role != "request":
             return False
         msg = parse_message(row)
         if msg is None:
@@ -66,7 +67,7 @@ def _is_user_or_relay_input_row(row: Message) -> bool:
     """Rows that should refresh an autonomous task's chat context."""
     if row.source_session_id is not None:
         return True
-    if row.kind != "request":
+    if row.role != "request":
         return False
     msg = parse_message(row)
     if msg is None:
@@ -85,5 +86,6 @@ def _has_new_task_input_since(db: Session, session_id: int, after_id: int) -> bo
             Message.id > after_id,
         )
         .order_by(Message.id.asc())
+        .options(selectinload(Message.parts))
     ).all()
     return any(_is_user_or_relay_input_row(row) for row in rows)

@@ -22,6 +22,7 @@ from app.agent.tools.tasks import (
     do_update_task,
 )
 from app.chat.models import ChatSession, Message
+from tests._message_factory import make_message
 
 
 @pytest.mark.usefixtures("_test_db")
@@ -535,7 +536,7 @@ def test_do_delete_task_drops_task_and_chat():
 
     with SessionLocal() as s:
         s.add(
-            Message(
+            make_message(
                 session_id=chat_id,
                 kind="response",
                 parts_json={"parts": [{"part_kind": "text", "content": "hi"}]},

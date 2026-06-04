@@ -127,8 +127,8 @@ def test_list_sorts_open_before_done(client):
 def test_open_sorted_by_last_activity(client):
     """`?done=false` orders open tasks by last activity (a chat message
     bumps a task above more-recently-created ones)."""
-    from app.chat.models import Message
     from app.db import SessionLocal
+    from tests._message_factory import make_message
 
     ids = {}
     chats = {}
@@ -142,7 +142,7 @@ def test_open_sorted_by_last_activity(client):
     # the future so the assertion can't flake on same-second timestamps.
     with SessionLocal() as s:
         s.add(
-            Message(
+            make_message(
                 session_id=chats["a"],
                 kind="response",
                 parts_json={"parts": [{"part_kind": "text", "content": "ping"}]},
@@ -440,8 +440,9 @@ def test_delete_missing_task_404(client):
 def test_delete_task_also_drops_chat_session(client):
     """Service-level cascade: deleting a task should not leave its
     chat session (or any messages it accumulated) orphaned."""
-    from app.chat.models import ChatSession, Message
+    from app.chat.models import ChatSession, Message  # noqa: F401
     from app.db import SessionLocal
+    from tests._message_factory import make_message
 
     create = client.post("/api/tasks", json={"title": "Has chat"})
     body = create.json()
@@ -450,7 +451,7 @@ def test_delete_task_also_drops_chat_session(client):
 
     with SessionLocal() as s:
         s.add(
-            Message(
+            make_message(
                 session_id=chat_id,
                 kind="response",
                 parts_json={"parts": [{"part_kind": "text", "content": "hi"}]},

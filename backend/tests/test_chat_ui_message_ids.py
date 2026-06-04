@@ -4,7 +4,6 @@ from datetime import datetime, timedelta
 
 from pydantic_ai.messages import (
     ModelMessage,
-    ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
     TextPart,
@@ -14,6 +13,7 @@ from pydantic_ai.messages import (
 )
 
 from app.chat.models import ChatSession, Message
+from app.chat.persist import build_message_row
 from app.chat.service import (
     get_or_create_main_session,
     load_compacted_history,
@@ -76,8 +76,8 @@ def test_interleaved_tool_turn_aligns_response_rows(_test_db):
         )
         rows = s.query(Message).filter(Message.session_id == sid).order_by(Message.id).all()
 
-    request_row = next(row for row in rows if row.kind == "request")
-    response_rows = [row for row in rows if row.kind == "response"]
+    request_row = next(row for row in rows if row.role == "request")
+    response_rows = [row for row in rows if row.role == "response"]
 
     with _test_db() as s:
         ui = load_session_as_ui_messages(s, sid)
@@ -89,14 +89,9 @@ def test_interleaved_tool_turn_aligns_response_rows(_test_db):
 
 
 def _insert_message(Session, sid: int, message: ModelMessage, created_at: datetime) -> int:
-    blob = ModelMessagesTypeAdapter.dump_python([message], mode="json")[0]
     with Session() as s:
-        row = Message(
-            session_id=sid,
-            kind=blob.get("kind", "request"),
-            parts_json=blob,
-            created_at=created_at,
-        )
+        row = build_message_row(message, session_id=sid)
+        row.created_at = created_at
         s.add(row)
         s.commit()
         s.refresh(row)
@@ -206,9 +201,7 @@ def test_compacted_then_live_history_stays_chronological(_test_db, monkeypatch):
         load_compacted_history(s, main_id, summarizer=lambda _t: "older context compacted")
         # The persisted summary row exists but must be hidden from the UI.
         assert any(
-            isinstance(r.parts_json, dict)
-            and "<conversation_summary>"
-            in str((r.parts_json.get("parts") or [{}])[0].get("content", ""))
+            r.parts and "<conversation_summary>" in str(r.parts[0].payload.get("content", ""))
             for r in s.query(Message).filter(Message.session_id == main_id).all()
         )
 

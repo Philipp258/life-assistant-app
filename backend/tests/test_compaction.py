@@ -23,6 +23,7 @@ from pydantic_ai.messages import (
 
 from app.chat import compaction
 from app.chat.models import ChatSession, Message
+from tests._message_factory import make_message
 from app.chat.service import (
     aload_compacted_history,
     aload_compacted_history_with_cursor,
@@ -48,7 +49,7 @@ def _assistant(text: str) -> ModelResponse:
 def _insert_message(Session, session_id: int, message, created_at: datetime) -> int:
     blob = ModelMessagesTypeAdapter.dump_python([message], mode="json")[0]
     with Session() as s:
-        row = Message(
+        row = make_message(
             session_id=session_id,
             kind=blob.get("kind", "request"),
             parts_json=blob,

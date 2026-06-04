@@ -48,7 +48,7 @@ def test_input_persists_user_message_and_streams_one_turn(client, _test_db):
 
     with Session() as s:
         rows = s.query(Message).filter(Message.session_id == main_id).order_by(Message.id).all()
-    kinds = [r.kind for r in rows]
+    kinds = [r.role for r in rows]
     assert kinds.count("request") >= 1 and kinds.count("response") == 1, kinds
 
 
@@ -186,7 +186,7 @@ def test_single_flight_one_turn_under_concurrent_wakes(_test_db):
     with Session() as s:
         responses = (
             s.query(Message)
-            .filter(Message.session_id == main_id, Message.kind == "response")
+            .filter(Message.session_id == main_id, Message.role == "response")
             .count()
         )
     assert responses == 1

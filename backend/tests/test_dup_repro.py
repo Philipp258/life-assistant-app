@@ -49,16 +49,16 @@ def _seed_terminal_task(Session, title: str, handoff: str) -> None:
 
 
 def _main_texts(Session) -> list[str]:
+    out: list[str] = []
     with Session() as s:
         main_id = get_or_create_main_session(s).id
         rows = s.query(Message).filter(Message.session_id == main_id).order_by(Message.id).all()
-    out: list[str] = []
-    for r in rows:
-        for p in (r.parts_json or {}).get("parts", []) or []:
-            if isinstance(p, dict) and p.get("part_kind") in ("text", "user-prompt"):
-                c = p.get("content")
-                if isinstance(c, str):
-                    out.append(c)
+        for r in rows:
+            for part in r.parts:
+                if part.part_kind in ("text", "user-prompt"):
+                    c = part.payload.get("content")
+                    if isinstance(c, str):
+                        out.append(c)
     return out
 
 

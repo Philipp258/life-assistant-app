@@ -192,7 +192,8 @@ def test_chat_message_tool_uses_z_suffix(_test_db):
     """`list_chat_messages` (the agent-facing tool) must mark message
     timestamps with `Z` so the model reads them as UTC."""
     from app.agent.tools.chats import do_list_chat_messages
-    from app.chat.models import ChatSession, Message
+    from app.chat.models import ChatSession
+    from tests._message_factory import make_message
 
     Session = _test_db
     with Session() as s:
@@ -200,7 +201,7 @@ def test_chat_message_tool_uses_z_suffix(_test_db):
         s.add(chat)
         s.flush()
         sid = chat.id
-        row = Message(
+        row = make_message(
             session_id=sid,
             kind="request",
             parts_json={

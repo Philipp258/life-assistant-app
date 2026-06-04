@@ -41,7 +41,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.chat.models import ChatSession, Message
 from app.chat.service import extract_task_handoff_text, parse_message
@@ -162,10 +162,11 @@ def _candidate_rows(session: Session, *, after_id: int) -> list[Message]:
             .where(
                 Message.id > after_id,
                 Message.archived_at.is_(None),
-                Message.kind == "request",
+                Message.role == "request",
                 ChatSession.task_id.is_not(None),
             )
             .order_by(Message.id)
+            .options(selectinload(Message.parts))
         )
     )
 

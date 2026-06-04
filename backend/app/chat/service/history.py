@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-from pydantic import ValidationError
 from pydantic_ai.messages import (
     ModelMessage,
-    ModelMessagesTypeAdapter,
     ModelRequest,
     UserPromptPart,
 )
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.chat.models import Message
+from app.chat.persist.mapper import rows_to_pydantic, try_message_to_pydantic
 
 
 def _load_rows_and_messages(
@@ -33,11 +32,11 @@ def _load_rows_and_messages(
             Message.archived_at.is_(None),
         )
         .order_by(Message.created_at.asc(), Message.id.asc())
+        .options(selectinload(Message.parts))
     ).all()
     if not rows:
         return [], []
-    parsed = list(ModelMessagesTypeAdapter.validate_python([row.parts_json for row in rows]))
-    return list(rows), parsed
+    return list(rows), rows_to_pydantic(list(rows))
 
 
 def _load_model_messages(session: Session, session_id: int) -> list[ModelMessage]:
@@ -48,13 +47,10 @@ def _load_model_messages(session: Session, session_id: int) -> list[ModelMessage
 def parse_message(row: Message) -> ModelMessage | None:
     """Validate one row's `parts_json` into a typed pydantic-ai ModelMessage.
 
-    Returns None for rows whose blob fails validation (corrupted or
+    Returns None for rows whose parts fail validation (corrupted or
     written by a prior, incompatible schema).
     """
-    try:
-        return ModelMessagesTypeAdapter.validate_python([row.parts_json])[0]
-    except ValidationError:
-        return None
+    return try_message_to_pydantic(row)
 
 
 def load_session_history(session: Session, session_id: int) -> list[ModelMessage]:
@@ -95,10 +91,11 @@ def _load_live_messages(
             Message.archived_at.is_(None),
         )
         .order_by(Message.created_at.asc(), Message.id.asc())
+        .options(selectinload(Message.parts))
     ).all()
     if not rows:
         return [], []
-    parsed = list(ModelMessagesTypeAdapter.validate_python([row.parts_json for row in rows]))
+    parsed = rows_to_pydantic(list(rows))
     paired = list(zip(rows, parsed, strict=True))
     # Summary rows are inserted after the live tail in DB order, but they
     # represent the oldest context. Keep row/message alignment while presenting

@@ -114,17 +114,14 @@ def _task_handoffs(Session, session_id: int) -> list[str]:
     handoffs: list[str] = []
     with Session() as s:
         rows = s.query(Message).filter(Message.session_id == session_id).order_by(Message.id).all()
-    for row in rows:
-        raw = row.parts_json if isinstance(row.parts_json, dict) else {}
-        for part in raw.get("parts", []) or []:
-            if not isinstance(part, dict):
-                continue
-            content = part.get("content")
-            if not isinstance(content, str):
-                continue
-            handoff = extract_task_handoff_text(content)
-            if handoff is not None:
-                handoffs.append(handoff)
+        for row in rows:
+            for part in row.parts:
+                content = part.payload.get("content")
+                if not isinstance(content, str):
+                    continue
+                handoff = extract_task_handoff_text(content)
+                if handoff is not None:
+                    handoffs.append(handoff)
     return handoffs
 
 
@@ -210,7 +207,7 @@ def test_empty_task_bootstrap_prompt_is_saved_before_model_run(_test_db):
             rows = s.query(Message).filter(Message.session_id == chat_id).all()
         observed_counts.append(len(rows))
         assert len(rows) == 1
-        assert rows[0].kind == "request"
+        assert rows[0].role == "request"
         return ModelResponse(parts=[TextPart(content="working on it")])
 
     agent = get_agent()
@@ -222,7 +219,7 @@ def test_empty_task_bootstrap_prompt_is_saved_before_model_run(_test_db):
     assert result.new_message_count == 1
     with Session() as s:
         rows = s.query(Message).filter(Message.session_id == chat_id).order_by(Message.id).all()
-    assert [row.kind for row in rows] == ["request", "response"]
+    assert [row.role for row in rows] == ["request", "response"]
 
 
 def test_wake_publishes_runner_activity_events(_test_db):
@@ -1040,11 +1037,9 @@ def _task_chat_text_messages(Session, chat_id: int) -> list[str]:
     with Session() as s:
         rows = s.query(Message).filter(Message.session_id == chat_id).order_by(Message.id).all()
         for row in rows:
-            for part in (row.parts_json or {}).get("parts", []) or []:
-                if isinstance(part, dict) and (
-                    part.get("part_kind") == "text" or part.get("kind") == "text"
-                ):
-                    content = part.get("content")
+            for part in row.parts:
+                if part.part_kind == "text":
+                    content = part.payload.get("content")
                     if isinstance(content, str):
                         out.append(content)
     return out
@@ -1519,13 +1514,11 @@ def test_persist_wake_outcome_accepts_offset_aware_do_at(monkeypatch, db_session
 
 def _parts_in_session(Session, chat_id: int) -> list[dict]:
     """Flatten every saved part across messages, in row order."""
+    flat: list[dict] = []
     with Session() as s:
         rows = s.query(Message).filter(Message.session_id == chat_id).order_by(Message.id).all()
-    flat: list[dict] = []
-    for row in rows:
-        for part in (row.parts_json or {}).get("parts", []) or []:
-            if isinstance(part, dict):
-                flat.append(part)
+        for row in rows:
+            flat.extend(part.payload for part in row.parts)
     return flat
 
 

@@ -3,9 +3,12 @@
 The chat router persists agent output as it streams from pydantic-ai
 (rather than once at end-of-turn) so a mid-stream disconnect or
 provider timeout doesn't lose the partial response. The helpers below
-back that flow: insert a row at the first `PartEndEvent`, rewrite its
-`parts_json` as later events extend the message, and patch the final
-metadata (usage / model / provider) once the stream resolves.
+back that flow: insert a row at the first `PartEndEvent`, rebuild its
+parts as later events extend the message, and patch the final message
+once the stream resolves.
+
+Each flush rebuilds the message's `MessagePart` rows via the mapper
+(`set_message_parts`); `delete-orphan` cleans up the superseded parts.
 
 pubsub is intentionally silent here — the active HTTP client already
 streams the deltas; cross-tab listeners refetch on `runner_finished`
@@ -15,37 +18,18 @@ streams the deltas; cross-tab listeners refetch on `runner_finished`
 
 from __future__ import annotations
 
-from typing import Any
-
 from pydantic_ai.messages import (
-    ModelMessage,
-    ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
     TextPart,
 )
 from sqlalchemy.orm import Session
-from sqlalchemy.orm.attributes import flag_modified
 
 from app.chat import pubsub
 from app.chat.models import Message
+from app.chat.persist.mapper import build_message_row, set_message_parts
 from app.chat.service.publish import _publish_row_upsert
 from app.chat.service.sessions import get_or_create_main_session
-
-
-def _dump_single(message: ModelMessage) -> dict[str, Any]:
-    """Round-trip one ModelMessage to the JSON blob shape stored in `parts_json`."""
-    dumped = ModelMessagesTypeAdapter.dump_python([message], mode="json")
-    blob = dumped[0]
-    if not isinstance(blob, dict):  # pragma: no cover — adapter always returns dicts
-        raise TypeError(f"ModelMessagesTypeAdapter dumped non-dict: {type(blob).__name__}")
-    return blob
-
-
-def _assign_response_metadata_columns(row: Message, blob: dict[str, Any]) -> None:
-    row.usage_json = blob.get("usage")
-    row.model_name = blob.get("model_name")
-    row.provider = blob.get("provider_name")
 
 
 def create_streaming_response_row(session: Session, session_id: int, text: str) -> Message:
@@ -55,17 +39,9 @@ def create_streaming_response_row(session: Session, session_id: int, text: str) 
     as a best-effort live partial; the final ModelResponse update is what
     represents a completed assistant message.
     """
-    blob = ModelMessagesTypeAdapter.dump_python(
-        [ModelResponse(parts=[TextPart(content=text)])],
-        mode="json",
-    )[0]
-    row = Message(
+    row = build_message_row(
+        ModelResponse(parts=[TextPart(content=text)]),
         session_id=session_id,
-        kind=blob.get("kind", "response"),
-        parts_json=blob,
-        usage_json=blob.get("usage"),
-        model_name=blob.get("model_name"),
-        provider=blob.get("provider_name"),
     )
     session.add(row)
     session.commit()
@@ -83,15 +59,10 @@ def update_streaming_response_row(
 ) -> Message | None:
     """Replace a live partial response row with the final ModelResponse."""
     row = session.get(Message, row_id)
-    if row is None or row.kind != "response":
+    if row is None or row.role != "response":
         return None
 
-    blob = ModelMessagesTypeAdapter.dump_python([message], mode="json")[0]
-    row.parts_json = blob
-    row.usage_json = blob.get("usage")
-    row.model_name = blob.get("model_name")
-    row.provider = blob.get("provider_name")
-    flag_modified(row, "parts_json")
+    set_message_parts(row, message)
     session.commit()
     session.refresh(row)
 
@@ -115,18 +86,15 @@ def start_draft_response(
     """Insert a partial assistant response row mid-stream.
 
     The row is fully-formed (carries whatever parts have completed so
-    far); subsequent `update_draft_response` calls overwrite the parts
-    blob as new `PartEndEvent`s arrive. Push notifications fire only at
+    far); subsequent `update_draft_response` calls rebuild the parts as
+    new `PartEndEvent`s arrive. Push notifications fire only at
     `finalize_response_metadata`, not here.
     """
-    blob = _dump_single(response)
-    row = Message(
+    row = build_message_row(
+        response,
         session_id=session_id,
         source_session_id=source_session_id,
-        kind="response",
-        parts_json=blob,
     )
-    _assign_response_metadata_columns(row, blob)
     session.add(row)
     session.commit()
     session.refresh(row)
@@ -138,14 +106,11 @@ def update_draft_response(
     message_id: int,
     response: ModelResponse,
 ) -> None:
-    """Overwrite `parts_json` for an in-flight response row."""
-    blob = _dump_single(response)
+    """Rebuild the parts for an in-flight response row."""
     row = session.get(Message, message_id)
     if row is None:
         return
-    row.parts_json = blob
-    _assign_response_metadata_columns(row, blob)
-    flag_modified(row, "parts_json")
+    set_message_parts(row, response)
     session.commit()
 
 
@@ -157,12 +122,10 @@ def start_tool_return_request(
     source_session_id: int | None = None,
 ) -> Message:
     """Insert a ModelRequest row holding the first ToolReturnPart of a turn."""
-    blob = _dump_single(request)
-    row = Message(
+    row = build_message_row(
+        request,
         session_id=session_id,
         source_session_id=source_session_id,
-        kind="request",
-        parts_json=blob,
     )
     session.add(row)
     session.commit()
@@ -175,13 +138,11 @@ def update_tool_return_request(
     message_id: int,
     request: ModelRequest,
 ) -> None:
-    """Overwrite `parts_json` for an in-flight ToolReturnPart-carrying request."""
-    blob = _dump_single(request)
+    """Rebuild the parts for an in-flight ToolReturnPart-carrying request."""
     row = session.get(Message, message_id)
     if row is None:
         return
-    row.parts_json = blob
-    flag_modified(row, "parts_json")
+    set_message_parts(row, request)
     session.commit()
 
 
@@ -194,19 +155,16 @@ def finalize_response_metadata(
 ) -> Message | None:
     """Patch a draft response row with the final ModelResponse + side effects.
 
-    The final ModelResponse carries `usage` / `model_name` /
-    `provider_name`, which aren't present on per-PartEndEvent draft
-    inserts. This call writes them in and (optionally) fires the
-    assistant-message Web Push that `save_new_messages` would have
-    triggered if we'd persisted the whole turn at once.
+    The final ModelResponse carries the complete part set, which may
+    differ from the per-PartEndEvent draft inserts. This call rebuilds
+    the parts and (optionally) fires the assistant-message Web Push that
+    `save_new_messages` would have triggered if we'd persisted the whole
+    turn at once.
     """
-    blob = _dump_single(response)
     row = session.get(Message, message_id)
     if row is None:
         return None
-    row.parts_json = blob
-    _assign_response_metadata_columns(row, blob)
-    flag_modified(row, "parts_json")
+    set_message_parts(row, response)
     session.commit()
     session.refresh(row)
     if fire_push:

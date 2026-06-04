@@ -18,7 +18,8 @@ from app.agent.tools.archived_messages import (
     ARCHIVED_MESSAGES_PAGE_MAX,
     do_read_archived_messages,
 )
-from app.chat.models import ChatSession, Message
+from app.chat.models import ChatSession
+from tests._message_factory import make_message
 from app.chat.service import get_or_create_main_session
 from app.datetime_utils import utc_now
 
@@ -52,7 +53,7 @@ def _seed(
         else [{"part_kind": "text", "content": text}]
     )
     with Session() as s:
-        row = Message(
+        row = make_message(
             session_id=session_id,
             kind=kind,
             parts_json={"kind": kind, "parts": parts},
