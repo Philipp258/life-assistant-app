@@ -14,6 +14,7 @@ Subcommands:
     wtree start [BRANCH]    create worktree + cmux workspace
     wtree stop  [BRANCH]    tear down worktree + close workspace
     wtree list              show all live worktrees
+    wtree slot ...          manage six fixed PyCharm-friendly slots
 
 Each created cmux workspace has four named horizontal tabs:
     claude   — Claude Code agent
@@ -43,6 +44,13 @@ from rich.table import Table
 CMUX = "/Applications/cmux.app/Contents/Resources/bin/cmux"
 WORKSPACE_PREFIX = "life:"
 TAB_NAMES = ["claude", "dev", "shell", "preview"]
+FIXED_SLOT_COUNT = 6
+FIXED_SLOT_BRANCH_PREFIX = "worktree/slot"
+FIXED_SLOT_BACKEND_BASE = 8020
+FIXED_SLOT_FRONTEND_BASE = 5180
+FIXED_SLOT_ENV_BEGIN = "# --- wtree fixed-slot managed block ---"
+FIXED_SLOT_ENV_END = "# --- end wtree fixed-slot managed block ---"
+PYCHARM_APP = "/Applications/PyCharm.app"
 
 # Status sentinel values written to <wt>/.wtree-status. Claude is told
 # (via --append-system-prompt) to `cat .wtree-status` before running
@@ -79,6 +87,11 @@ app = typer.Typer(
     help="Life Assistant worktree + cmux workspace lifecycle.",
     no_args_is_help=False,
 )
+slot_app = typer.Typer(
+    add_completion=False,
+    help="Manage six fixed PyCharm-friendly worktree slots.",
+)
+app.add_typer(slot_app, name="slot")
 
 
 # ---------- cmux RPC ---------------------------------------------------------
@@ -99,7 +112,9 @@ def cmux_rpc(method: str, **params: Any) -> dict[str, Any]:
         text=True,
     )
     if proc.returncode != 0:
-        raise CmuxError(f"{method} failed: {proc.stderr.strip() or proc.stdout.strip()}")
+        raise CmuxError(
+            f"{method} failed: {proc.stderr.strip() or proc.stdout.strip()}"
+        )
     out = proc.stdout.strip()
     if not out:
         return {}
@@ -126,12 +141,60 @@ def repo_root() -> Path:
     return Path(proc.stdout.strip())
 
 
+def remote_repo_name(repo: Path) -> str:
+    """Return the origin repo name, so temp worktrees still target stable slot dirs."""
+    proc = subprocess.run(
+        ["git", "-C", str(repo), "config", "--get", "remote.origin.url"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    remote = proc.stdout.strip()
+    if not remote:
+        return repo.name
+    name = remote.rstrip("/").split("/")[-1]
+    if name.endswith(".git"):
+        name = name[:-4]
+    return name or repo.name
+
+
+def fixed_slots_root(repo: Path) -> Path:
+    """Use the conventional ~/Projects path for fixed local slots when possible."""
+    candidate = Path.home() / "Projects"
+    if (
+        candidate.exists()
+        and str(candidate.resolve()).lower() == str(repo.parent.resolve()).lower()
+    ):
+        return candidate
+    return repo.parent
+
+
 def wt_root(repo: Path) -> Path:
     return repo.parent / f"{repo.name}-wt"
 
 
 def worktree_path(repo: Path, branch: str) -> Path:
     return wt_root(repo) / branch
+
+
+def fixed_slot_path(repo: Path, slot: int) -> Path:
+    return fixed_slots_root(repo) / f"{remote_repo_name(repo)}-slot-{slot}"
+
+
+def fixed_slot_branch(slot: int) -> str:
+    return f"{FIXED_SLOT_BRANCH_PREFIX}-{slot}"
+
+
+def fixed_slot_ports(slot: int) -> tuple[int, int]:
+    return FIXED_SLOT_BACKEND_BASE + slot - 1, FIXED_SLOT_FRONTEND_BASE + slot - 1
+
+
+def projects_bin_dir(repo: Path) -> Path:
+    return fixed_slots_root(repo) / "bin"
+
+
+def projects_env_sh(repo: Path) -> Path:
+    return fixed_slots_root(repo) / "env.sh"
 
 
 def alloc_ports(branch: str) -> tuple[int, int]:
@@ -210,7 +273,9 @@ def write_env_overrides(wt: Path, branch: str, backend: int, frontend: int) -> N
             f.write(f"SESSION_SECRET={secrets.token_hex(32)}\n")
 
 
-def write_bootstrap_artifacts(wt: Path, branch: str, backend: int, frontend: int) -> None:
+def write_bootstrap_artifacts(
+    wt: Path, branch: str, backend: int, frontend: int
+) -> None:
     """Drop the status file, the README, and the bootstrap script that
     the dev tab will execute. Doing this before opening cmux means
     claude can read WTREE_BOOTSTRAP.md from the moment its tab opens.
@@ -277,6 +342,262 @@ exec make dev
     bootstrap.chmod(0o755)
 
 
+# ---------- fixed slot helpers ---------------------------------------------
+
+
+def _slot_numbers(target: str) -> list[int]:
+    target = target.strip().lower()
+    if target == "all":
+        return list(range(1, FIXED_SLOT_COUNT + 1))
+    try:
+        slot = int(target)
+    except ValueError:
+        console.print(
+            f"[red]slot must be 1-{FIXED_SLOT_COUNT} or 'all': {target}[/red]"
+        )
+        raise typer.Exit(2)
+    if slot < 1 or slot > FIXED_SLOT_COUNT:
+        console.print(f"[red]slot must be 1-{FIXED_SLOT_COUNT}: {slot}[/red]")
+        raise typer.Exit(2)
+    return [slot]
+
+
+def _git_ref_exists(repo: Path, ref: str) -> bool:
+    return (
+        subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--verify", ref],
+            capture_output=True,
+        ).returncode
+        == 0
+    )
+
+
+def _git_branch_exists(repo: Path, branch: str) -> bool:
+    return (
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "show-ref",
+                "--verify",
+                "--quiet",
+                f"refs/heads/{branch}",
+            ]
+        ).returncode
+        == 0
+    )
+
+
+def _refresh_origin_main(repo: Path) -> None:
+    proc = subprocess.run(
+        ["git", "-C", str(repo), "fetch", "origin", "main:refs/remotes/origin/main"],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        console.print(
+            "[yellow]could not refresh origin/main; using local origin/main[/yellow]"
+        )
+        if proc.stderr.strip():
+            console.print(f"[dim]{proc.stderr.strip()}[/dim]")
+    if not _git_ref_exists(repo, "origin/main"):
+        console.print("[red]origin/main is not available[/red]")
+        raise typer.Exit(1)
+
+
+def _is_git_worktree(path: Path) -> bool:
+    return (
+        path.exists()
+        and subprocess.run(
+            ["git", "-C", str(path), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            text=True,
+        ).returncode
+        == 0
+    )
+
+
+def _current_branch(path: Path) -> str | None:
+    proc = subprocess.run(
+        ["git", "-C", str(path), "branch", "--show-current"],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip() or None
+
+
+def _env_value(text: str, key: str) -> str | None:
+    prefix = f"{key}="
+    for line in text.splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix) :]
+    return None
+
+
+def _strip_managed_env_block(text: str) -> str:
+    lines: list[str] = []
+    in_block = False
+    for line in text.splitlines():
+        if line.strip() == FIXED_SLOT_ENV_BEGIN:
+            in_block = True
+            continue
+        if line.strip() == FIXED_SLOT_ENV_END:
+            in_block = False
+            continue
+        if not in_block:
+            lines.append(line)
+    return "\n".join(lines).rstrip()
+
+
+def write_fixed_slot_env(wt: Path, slot: int) -> None:
+    import secrets
+
+    backend_port, frontend_port = fixed_slot_ports(slot)
+    env_file = wt / ".env"
+    existing = env_file.read_text() if env_file.exists() else ""
+    session_secret = _env_value(existing, "SESSION_SECRET") or secrets.token_hex(32)
+    custom = _strip_managed_env_block(existing)
+    db_path = wt / "data" / "life_assistant.db"
+    managed = "\n".join(
+        [
+            FIXED_SLOT_ENV_BEGIN,
+            "ENV=dev",
+            "SERVE_FRONTEND=false",
+            f"BACKEND_PORT={backend_port}",
+            f"FRONTEND_PORT={frontend_port}",
+            f"DATABASE_URL=sqlite:///{db_path}",
+            f"SESSION_SECRET={session_secret}",
+            FIXED_SLOT_ENV_END,
+        ]
+    )
+    env_file.write_text(f"{custom}\n\n{managed}\n" if custom else f"{managed}\n")
+
+
+def _launcher_path(repo: Path, slot: int, command: str) -> Path:
+    return projects_bin_dir(repo) / f"{remote_repo_name(repo)}-slot-{slot}-{command}"
+
+
+def _launcher_header(repo: Path, wt: Path) -> str:
+    return f"""#!/usr/bin/env bash
+set -euo pipefail
+
+SLOT_DIR="{wt}"
+ENV_SH="{projects_env_sh(repo)}"
+PYCHARM_APP="{PYCHARM_APP}"
+
+load_slot_env() {{
+  if [ -f "$ENV_SH" ]; then
+    # shellcheck disable=SC1090
+    source "$ENV_SH"
+  fi
+  if [ -f "$SLOT_DIR/.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$SLOT_DIR/.env"
+    set +a
+  fi
+}}
+
+"""
+
+
+def write_fixed_slot_launchers(repo: Path, slot: int) -> None:
+    wt = fixed_slot_path(repo, slot)
+    bin_dir = projects_bin_dir(repo)
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    scripts = {
+        "pycharm": f"""{_launcher_header(repo, wt)}exec open -na "$PYCHARM_APP" --args "$SLOT_DIR"
+""",
+        "setup": f"""{_launcher_header(repo, wt)}load_slot_env
+cd "$SLOT_DIR/backend"
+uv sync
+cd "$SLOT_DIR/frontend"
+pnpm install --frozen-lockfile
+cd "$SLOT_DIR/backend"
+uv run alembic upgrade head
+uv run python -m app.users.set_password dev
+""",
+        "dev": f"""{_launcher_header(repo, wt)}load_slot_env
+cd "$SLOT_DIR"
+exec make dev "$@"
+""",
+        "backend": f"""{_launcher_header(repo, wt)}load_slot_env
+cd "$SLOT_DIR"
+exec make backend "$@"
+""",
+        "frontend": f"""{_launcher_header(repo, wt)}load_slot_env
+cd "$SLOT_DIR"
+exec make frontend "$@"
+""",
+    }
+    for command, body in scripts.items():
+        target = _launcher_path(repo, slot, command)
+        target.write_text(body)
+        target.chmod(0o755)
+
+
+def ensure_fixed_slot(repo: Path, slot: int) -> None:
+    wt = fixed_slot_path(repo, slot)
+    branch = fixed_slot_branch(slot)
+
+    if wt.exists() and not _is_git_worktree(wt):
+        console.print(f"[red]{wt} exists but is not a git worktree[/red]")
+        raise typer.Exit(1)
+
+    if not wt.exists():
+        if _git_branch_exists(repo, branch):
+            args = ["git", "-C", str(repo), "worktree", "add", str(wt), branch]
+        else:
+            args = [
+                "git",
+                "-C",
+                str(repo),
+                "worktree",
+                "add",
+                "-b",
+                branch,
+                str(wt),
+                "origin/main",
+            ]
+        subprocess.run(args, check=True)
+
+    current = _current_branch(wt)
+    if current != branch:
+        console.print(
+            f"[red]{wt} is on {current or 'detached HEAD'}, expected {branch}[/red]"
+        )
+        raise typer.Exit(1)
+
+    write_fixed_slot_env(wt, slot)
+    write_fixed_slot_launchers(repo, slot)
+
+
+def _run_launcher(repo: Path, slot: int, command: str) -> None:
+    launcher = _launcher_path(repo, slot, command)
+    if not launcher.exists():
+        ensure_fixed_slot(repo, slot)
+    subprocess.run([str(launcher)], check=True)
+
+
+def _slot_setup_status(repo: Path, slot: int) -> str:
+    wt = fixed_slot_path(repo, slot)
+    if not wt.exists():
+        return "missing"
+    if not _is_git_worktree(wt):
+        return "not-git"
+    env_ok = (wt / ".env").is_file()
+    backend_ok = (wt / "backend" / ".venv").is_dir()
+    frontend_ok = (wt / "frontend" / "node_modules").is_dir()
+    if env_ok and backend_ok and frontend_ok:
+        return "setup"
+    if env_ok:
+        return "initialized"
+    return "no-env"
+
+
 # ---------- cmux workspace orchestration ------------------------------------
 
 
@@ -296,7 +617,9 @@ def _surface_run(surface_id: str, command: str) -> None:
     cmux_rpc("surface.send_key", surface_id=surface_id, key="Enter")
 
 
-def create_workspace(branch: str, wt: Path, frontend_port: int) -> tuple[str, dict[str, str]]:
+def create_workspace(
+    branch: str, wt: Path, frontend_port: int
+) -> tuple[str, dict[str, str]]:
     """Create the cmux workspace + four named tabs.
 
     Sequence:
@@ -396,17 +719,23 @@ def _do_start(branch: str) -> None:
     # bootstrap script visibly so the user (and claude, via
     # `cat .wtree-status`) can watch it work.
     if cmux_available():
-        with console.status(f"opening cmux workspace [bold]{WORKSPACE_PREFIX}{branch}[/bold]"):
+        with console.status(
+            f"opening cmux workspace [bold]{WORKSPACE_PREFIX}{branch}[/bold]"
+        ):
             ws_id, surfaces = create_workspace(branch, wt, frontend_port)
         meta.workspace_id = ws_id
         meta.surfaces = surfaces
-        console.print(f"  cmux workspace [cyan]{ws_id[:8]}…[/cyan] tabs: {', '.join(TAB_NAMES)}")
+        console.print(
+            f"  cmux workspace [cyan]{ws_id[:8]}…[/cyan] tabs: {', '.join(TAB_NAMES)}"
+        )
         console.print(
             "  [dim]bootstrap (uv sync + pnpm install + alembic) running "
             "in the dev tab; status in [bold].wtree-status[/bold].[/dim]"
         )
     else:
-        console.print("[yellow]cmux not found — run `bash .wtree-bootstrap.sh` manually.[/yellow]")
+        console.print(
+            "[yellow]cmux not found — run `bash .wtree-bootstrap.sh` manually.[/yellow]"
+        )
 
     meta.save(wt)
     console.print(f"[green]✓ life:{branch} launched[/green]")
@@ -460,6 +789,101 @@ def _do_list() -> None:
     console.print(table)
 
 
+# ---------- fixed slot entry points -----------------------------------------
+
+
+@slot_app.command(name="init")
+def slot_init(
+    target: str = typer.Argument("all", help="Slot number 1-6, or 'all'"),
+) -> None:
+    """Create/update fixed slot worktrees, env files, and local launchers."""
+    repo = repo_root()
+    slots = _slot_numbers(target)
+    _refresh_origin_main(repo)
+    for slot in slots:
+        ensure_fixed_slot(repo, slot)
+        wt = fixed_slot_path(repo, slot)
+        backend_port, frontend_port = fixed_slot_ports(slot)
+        console.print(
+            f"[green]slot {slot}[/green] {wt} "
+            f"backend=:{backend_port} frontend=:{frontend_port}"
+        )
+
+
+@slot_app.command(name="list")
+def slot_list() -> None:
+    """Show fixed slot paths, branches, ports, and setup status."""
+    repo = repo_root()
+    table = Table(title="Life Assistant fixed slots")
+    table.add_column("slot", style="cyan")
+    table.add_column("branch")
+    table.add_column("backend")
+    table.add_column("frontend")
+    table.add_column("status")
+    table.add_column("path")
+    for slot in range(1, FIXED_SLOT_COUNT + 1):
+        backend_port, frontend_port = fixed_slot_ports(slot)
+        table.add_row(
+            str(slot),
+            fixed_slot_branch(slot),
+            f":{backend_port}",
+            f":{frontend_port}",
+            _slot_setup_status(repo, slot),
+            str(fixed_slot_path(repo, slot)),
+        )
+    console.print(table)
+
+
+@slot_app.command(name="setup")
+def slot_setup(
+    target: str = typer.Argument("all", help="Slot number 1-6, or 'all'"),
+) -> None:
+    """Install backend/frontend deps, migrate SQLite, and seed dev password."""
+    repo = repo_root()
+    slots = _slot_numbers(target)
+    _refresh_origin_main(repo)
+    for slot in slots:
+        ensure_fixed_slot(repo, slot)
+        console.print(f"[cyan]setting up slot {slot}[/cyan]")
+        _run_launcher(repo, slot, "setup")
+
+
+@slot_app.command(name="dev")
+def slot_dev(slot: int = typer.Argument(..., help="Slot number 1-6")) -> None:
+    """Run `make dev` for a fixed slot."""
+    repo = repo_root()
+    _slot_numbers(str(slot))
+    ensure_fixed_slot(repo, slot)
+    _run_launcher(repo, slot, "dev")
+
+
+@slot_app.command(name="backend")
+def slot_backend(slot: int = typer.Argument(..., help="Slot number 1-6")) -> None:
+    """Run `make backend` for a fixed slot."""
+    repo = repo_root()
+    _slot_numbers(str(slot))
+    ensure_fixed_slot(repo, slot)
+    _run_launcher(repo, slot, "backend")
+
+
+@slot_app.command(name="frontend")
+def slot_frontend(slot: int = typer.Argument(..., help="Slot number 1-6")) -> None:
+    """Run `make frontend` for a fixed slot."""
+    repo = repo_root()
+    _slot_numbers(str(slot))
+    ensure_fixed_slot(repo, slot)
+    _run_launcher(repo, slot, "frontend")
+
+
+@slot_app.command(name="open")
+def slot_open(slot: int = typer.Argument(..., help="Slot number 1-6")) -> None:
+    """Open a fixed slot in PyCharm."""
+    repo = repo_root()
+    _slot_numbers(str(slot))
+    ensure_fixed_slot(repo, slot)
+    _run_launcher(repo, slot, "pycharm")
+
+
 # ---------- typer entry points ----------------------------------------------
 
 
@@ -504,7 +928,9 @@ def main(ctx: typer.Context) -> None:
     """Default to interactive menu when no subcommand given."""
     if ctx.invoked_subcommand is not None:
         return
-    choice = questionary.select("wtree", choices=["start", "stop", "list", "quit"]).ask()
+    choice = questionary.select(
+        "wtree", choices=["start", "stop", "list", "quit"]
+    ).ask()
     if choice == "start":
         start(None)  # type: ignore[arg-type]
     elif choice == "stop":
