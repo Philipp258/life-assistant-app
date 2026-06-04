@@ -24,13 +24,40 @@ means the assistant's runtime agent.
 - `frontend/` — React 18 + Vite + TS + Tailwind, managed with `pnpm`.
   Tests via Vitest; some screens have Storybook stories.
 - `deploy/` — systemd units and install/update/backup scripts for the VPS.
-- `scripts/cmux_slots.py` — opens/reuses cmux workspaces for the six fixed
-  local slots under `/Users/philipp/Projects/life-assistant-app-slot-N`.
+- `scripts/cmux_slots.py` — opens/reuses lightweight cmux workspaces for the six
+  fixed local slots under `/Users/philipp/Projects/life-assistant-app-slot-N`
+  and starts their app processes on demand.
+
+## Fixed local slots
+
+Use the installed `parallel-development` and `cmux` skills for the general
+fixed-slot workflow. The Life Assistant slot contract is:
+
+- Path: `/Users/philipp/Projects/life-assistant-app-slot-N`
+- Branch: `worktree/slot-N`
+- Backend port: `8020 + N - 1`
+- Frontend port: `5180 + N - 1`
+- Frontend URL: `http://localhost:<frontend-port>/chat`
+- Backend health: `http://localhost:<backend-port>/api/health`
+- Database: `data/life_assistant.db` inside the slot
+- Env file: `.env` inside the slot
+
+Project helper commands:
+
+- `scripts/cmux_slots.py up [all|N...]` creates/reuses lightweight cmux
+  workspaces.
+- `scripts/cmux_slots.py list` shows slot paths, ports, app status, and
+  workspace ids.
+- `scripts/cmux_slots.py title N "short task"` sets the cmux workspace title.
+- `scripts/cmux_slots.py dev N` creates/reuses `dev log` and `browser` surfaces,
+  then starts `make dev` for that slot.
+- `scripts/cmux_slots.py doctor [all|N...]` checks fixed-slot prerequisites.
 
 ## Running things
 
 `make dev` boots backend (uvicorn :8000) and frontend (vite :5173)
-together — that's the normal local loop.
+together — that's the normal local loop. Fixed slots load `.env` before
+running it so each slot uses its assigned ports.
 
 Backend, from `backend/`:
 
