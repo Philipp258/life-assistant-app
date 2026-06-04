@@ -27,6 +27,7 @@ from typing import Any
 
 from pydantic_ai import Agent
 from sqlalchemy import or_, select
+from sqlalchemy.orm import selectinload
 
 from app.agent.deps import AgentDeps
 from app.agent.tools._paging import normalize_page
@@ -55,7 +56,7 @@ def _render_row(row: Message) -> dict[str, Any]:
     msg = parse_message(row)
     return {
         "id": row.id,
-        "kind": row.kind,
+        "kind": row.role,
         "role": role_for(msg) if msg is not None else "user",
         "text": flatten_parts(msg) if msg is not None else "",
         "created_at": serialize_utc(row.created_at),
@@ -104,6 +105,7 @@ def do_read_archived_messages(
                 ),
             )
             .order_by(Message.created_at.asc(), Message.id.asc())
+            .options(selectinload(Message.parts))
         )
         before_naive = normalize_to_naive_utc(before)
         after_naive = normalize_to_naive_utc(after)

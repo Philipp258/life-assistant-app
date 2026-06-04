@@ -36,6 +36,7 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 
 from app.agent.deps import AgentDeps
 from app.agent.tools._paging import normalize_page
@@ -133,6 +134,7 @@ def do_list_chat_messages(
             base.order_by(Message.created_at.asc(), Message.id.asc())
             .offset(safe_offset)
             .limit(safe_limit)
+            .options(selectinload(Message.parts))
         ).all()
 
     items: list[dict[str, Any]] = []
@@ -141,7 +143,7 @@ def do_list_chat_messages(
         items.append(
             {
                 "id": row.id,
-                "kind": row.kind,
+                "kind": row.role,
                 "role": role_for(msg) if msg is not None else "user",
                 "text": flatten_parts(msg) if msg is not None else "",
                 "created_at": serialize_utc(row.created_at),
@@ -228,6 +230,7 @@ def do_read_main_chat_recent(
                 base.order_by(Message.created_at.desc(), Message.id.desc())
                 .offset(safe_offset)
                 .limit(safe_limit)
+                .options(selectinload(Message.parts))
             ).all()
         )
 

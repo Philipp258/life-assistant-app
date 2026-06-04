@@ -10,7 +10,8 @@ from app.agent.tools.chats import (
     do_read_main_chat_recent,
 )
 from app.chat.service import get_or_create_main_session
-from app.chat.models import ChatSession, Message
+from app.chat.models import ChatSession
+from tests._message_factory import make_message
 from app.tasks.models import Task
 
 
@@ -23,7 +24,7 @@ def _seed_message(
     created_at: datetime | None = None,
 ) -> int:
     with Session() as s:
-        row = Message(
+        row = make_message(
             session_id=session_id,
             kind=kind,
             parts_json={"kind": kind, "parts": parts},

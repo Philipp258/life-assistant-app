@@ -1,8 +1,8 @@
 """Session + message persistence for Pydantic AI ModelMessages.
 
-`parts_json` stores the full `ModelMessage` JSON (round-trips through
-`ModelMessagesTypeAdapter`). A few fields are denormalized into typed columns
-for indexed queries, but the JSON is the source of truth.
+Messages are stored in an owned schema (`Message` parent + ordered,
+typed `MessagePart` children) and mapped to/from pydantic-ai's
+`ModelMessage` at the `app.chat.persist` seam on every load/save.
 
 Phase 5: there is exactly one **main** session — the singleton row with
 `task_id IS NULL`. It is the app's home. Task-bound sessions belong to

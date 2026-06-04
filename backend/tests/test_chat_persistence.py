@@ -59,19 +59,18 @@ def test_user_prompt_persists_with_pending_task_event(client, _test_db):
 
     events = ws_turn(client, session_id=main_id, text="hello nix", handler=handler)
 
+    user_texts: list[str] = []
     with Session() as s:
         rows = s.query(Message).filter(Message.session_id == main_id).order_by(Message.id).all()
-    kinds = [r.kind for r in rows]
-    assert "request" in kinds, f"user prompt not persisted; kinds={kinds}"
-    assert "response" in kinds, f"agent reply not persisted; kinds={kinds}"
-
-    user_texts: list[str] = []
-    for r in rows:
-        if r.kind != "request":
-            continue
-        for p in (r.parts_json or {}).get("parts", []):
-            if isinstance(p, dict) and p.get("part_kind") == "user-prompt":
-                user_texts.append(p.get("content"))
+        roles = [r.role for r in rows]
+        for r in rows:
+            if r.role != "request":
+                continue
+            for part in r.parts:
+                if part.part_kind == "user-prompt":
+                    user_texts.append(part.payload.get("content"))
+    assert "request" in roles, f"user prompt not persisted; roles={roles}"
+    assert "response" in roles, f"agent reply not persisted; roles={roles}"
     assert "hello nix" in user_texts
 
     assert "hello nix" in reduced_texts(events, "user")
@@ -129,8 +128,8 @@ def test_repair_persisted_history_appends_synthetic_tool_returns(_test_db):
 
     with Session() as s:
         rows = s.query(Message).filter(Message.session_id == sid).order_by(Message.id).all()
-    assert [r.kind for r in rows] == ["request", "response", "request"]
-    last_parts = rows[-1].parts_json.get("parts", [])
+        assert [r.role for r in rows] == ["request", "response", "request"]
+        last_parts = [p.payload for p in rows[-1].parts]
     tool_returns = [p for p in last_parts if p.get("part_kind") == "tool-return"]
     assert len(tool_returns) == 1
     assert tool_returns[0]["tool_call_id"] == "a"

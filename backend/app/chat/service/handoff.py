@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic_ai.messages import ModelRequest, SystemPromptPart
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.chat.models import Message
 from app.chat.service.history import parse_message
@@ -68,6 +68,7 @@ def latest_task_handoff(session: Session, session_id: int) -> str | None:
         )
         .order_by(Message.id.desc())
         .limit(50)
+        .options(selectinload(Message.parts))
     ).all()
     for row in rows:
         msg = parse_message(row)

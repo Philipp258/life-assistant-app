@@ -108,19 +108,15 @@ def test_persisted_user_prompt_does_not_include_voice_marker(client, _test_db):
 
     with Session() as s:
         rows = s.query(Message).filter(Message.session_id == main_id).order_by(Message.id).all()
-
-    for row in rows:
-        parts = (row.parts_json or {}).get("parts") or []
-        for p in parts:
-            if not isinstance(p, dict):
-                continue
-            if p.get("part_kind") in {"user-prompt", "text"}:
-                content = p.get("content")
-                if isinstance(content, str):
-                    assert VOICE_MODE_PROMPT not in content, (
-                        "voice-mode marker leaked into user prompt or assistant "
-                        f"text: row.kind={row.kind} part={p!r}"
-                    )
+        for row in rows:
+            for part in row.parts:
+                if part.part_kind in {"user-prompt", "text"}:
+                    content = part.payload.get("content")
+                    if isinstance(content, str):
+                        assert VOICE_MODE_PROMPT not in content, (
+                            "voice-mode marker leaked into user prompt or assistant "
+                            f"text: row.role={row.role} part={part.payload!r}"
+                        )
 
 
 def test_build_system_prompt_cache_prefix_is_stable(_test_db):

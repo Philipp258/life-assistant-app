@@ -93,20 +93,20 @@ def _post_user_message(client, text: str, *, session_id: int | None = None) -> N
 
 
 def _assistant_texts(Session, session_id: int) -> list[str]:
+    out: list[str] = []
     with Session() as s:
         rows = (
             s.query(Message)
-            .filter(Message.session_id == session_id, Message.kind == "response")
+            .filter(Message.session_id == session_id, Message.role == "response")
             .order_by(Message.id)
             .all()
         )
-    out: list[str] = []
-    for row in rows:
-        for part in (row.parts_json or {}).get("parts", []) or []:
-            if isinstance(part, dict) and part.get("part_kind") == "text":
-                c = part.get("content")
-                if isinstance(c, str) and c.strip():
-                    out.append(c.strip())
+        for row in rows:
+            for part in row.parts:
+                if part.part_kind == "text":
+                    c = part.payload.get("content")
+                    if isinstance(c, str) and c.strip():
+                        out.append(c.strip())
     return out
 
 

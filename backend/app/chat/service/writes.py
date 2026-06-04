@@ -6,13 +6,13 @@ from collections.abc import Iterable
 
 from pydantic_ai.messages import (
     ModelMessage,
-    ModelMessagesTypeAdapter,
     ModelResponse,
 )
 from sqlalchemy.orm import Session
 
 from app.chat import pubsub
 from app.chat.models import Message
+from app.chat.persist.mapper import build_message_row
 from app.chat.service.publish import _publish_row_upsert
 from app.chat.service.sessions import get_or_create_main_session
 
@@ -37,24 +37,19 @@ def save_new_messages(
     cause that client to re-fetch and re-mount its runtime. Push
     notifications still fire (they consult `subscriber_count` directly).
     """
-    dumped = ModelMessagesTypeAdapter.dump_python(list(messages), mode="json")
+    message_list = list(messages)
     saved: list[Message] = []
-    for blob in dumped:
-        row = Message(
+    for message in message_list:
+        row = build_message_row(
+            message,
             session_id=session_id,
             source_session_id=source_session_id,
-            kind=blob.get("kind", "request"),
-            parts_json=blob,
         )
-        if blob.get("kind") == "response":
-            row.usage_json = blob.get("usage")
-            row.model_name = blob.get("model_name")
-            row.provider = blob.get("provider_name")
         session.add(row)
         saved.append(row)
     session.commit()
     main_session_id: int | None = None
-    has_response = any(blob.get("kind") == "response" for blob in dumped)
+    has_response = any(row.role == "response" for row in saved)
     if has_response:
         # Only resolve main when there's actually a candidate to push for.
         # Looked up once per call so we don't hammer SELECT in fan-out.
@@ -63,7 +58,7 @@ def save_new_messages(
 
     for row in saved:
         session.refresh(row)
-        if row.kind == "response" and session_id == main_session_id:
+        if row.role == "response" and session_id == main_session_id:
             _service._fire_assistant_message_push(row, session_id)
     if publish:
         # Prefer keyed row updates over a full snapshot. Some rows (tool

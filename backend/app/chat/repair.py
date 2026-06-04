@@ -24,15 +24,15 @@ from __future__ import annotations
 
 from pydantic_ai.messages import (
     ModelMessage,
-    ModelMessagesTypeAdapter,
     ModelRequest,
     ToolCallPart,
     ToolReturnPart,
 )
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.chat.models import Message
+from app.chat.persist.mapper import rows_to_pydantic
 from app.chat.service import save_new_messages
 
 INTERRUPTED_MESSAGE = "Tool execution was interrupted by an error."
@@ -92,10 +92,11 @@ def repair_persisted_history(session: Session, session_id: int) -> bool:
             Message.archived_at.is_(None),
         )
         .order_by(Message.id)
+        .options(selectinload(Message.parts))
     ).all()
     if not rows:
         return False
-    messages = list(ModelMessagesTypeAdapter.validate_python([row.parts_json for row in rows]))
+    messages = rows_to_pydantic(list(rows))
     open_calls = _open_tool_calls(messages)
     if not open_calls:
         return False

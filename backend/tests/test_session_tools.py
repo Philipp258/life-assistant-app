@@ -46,7 +46,7 @@ def test_relay_writes_task_chat_with_source_stamp_and_resumes(_test_db):
         task = s.get(Task, task_id)
     assert len(rows) == 1
     assert rows[0].source_session_id == source_id
-    assert rows[0].kind == "response"
+    assert rows[0].role == "response"
     assert task.assignee == "assistant"  # resumed
 
 
