@@ -32,6 +32,7 @@ from app.agent import build_system_prompt, get_agent
 from app.agent.deps import AgentDeps
 from app.agent.usage import default_usage_limits
 from app.chat import events, pubsub
+from app.chat.compaction import estimate_tokens
 from app.chat.models import ChatSession, Message
 from app.chat.repair import close_dangling_tool_calls, repair_persisted_history
 from app.chat.service import (
@@ -43,6 +44,7 @@ from app.chat.service import (
     update_streaming_response_row,
 )
 from app.chat.session_policy import resolve_kind
+from app.config import settings
 from app.db import SessionLocal
 from app.provider_settings import service as provider_service
 from app.tasks.models import Task
@@ -52,6 +54,7 @@ from .claims import _get_task_for_session, _task_in_terminal_state
 from .inputs import _has_new_task_input_since
 from .messages import (
     TERMINAL_TASK_TOOL_NAMES,
+    _ContextLimitRestart,
     _StaleTaskInputRestart,
     _build_bootstrap_request,
     _build_stall_reminder,
@@ -347,6 +350,41 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
         # heuristic. Normal chat turns keep the default `str` output.
         iter_kwargs["output_type"] = [str, events.SILENCE_OUTPUT]
     restart_for_stale_input = False
+    restart_for_context = False
+
+    def _stop_for_context_limit(messages: list[ModelMessage]) -> bool:
+        """Break the turn if its tool-call loop has grown too much.
+
+        Turn-start compaction runs once per wake; a single turn's tool-call
+        loop can then grow the context far past it. When the tokens this turn
+        has *added* (`agent_run.new_messages()`) cross the growth ceiling, stop
+        before the next model/tool step, persist what we have (closing any
+        dangling tool calls so the next wake loads provider-valid history),
+        and signal a restart. The re-wake reloads freshly-compacted history.
+
+        Bounding growth (not absolute base+growth) keeps the re-wake making
+        forward progress: a fresh turn starts at zero added tokens, so it never
+        spins when the loaded history alone is already large.
+
+        Deferred-persistence turns (the main session draining a task handoff)
+        can't safely persist partial progress — those commit atomically with
+        the event cursor after the loop — so the guard skips them and leaves
+        the rarer overflow to the reactive context-window retry in `wake`.
+        """
+        if defer_persist:
+            return False
+        grown = estimate_tokens(messages)
+        if grown <= settings.compaction_max_turn_growth_tokens:
+            return False
+        closed = close_dangling_tool_calls(list(agent_run.new_messages()))
+        _flush(closed)
+        logger.info(
+            "runner: breaking session %d turn after ~%d tokens of in-turn growth; "
+            "recompacting on re-wake",
+            session_id,
+            grown,
+        )
+        return True
 
     def _stale_task_input_waiting() -> bool:
         if kind != "task":
@@ -421,6 +459,9 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
                 if _stop_for_stale_task_input(node):
                     restart_for_stale_input = True
                     break
+                if _stop_for_context_limit(messages):
+                    restart_for_context = True
+                    break
                 boundary_messages = _messages_with_pending_tool_returns(node, messages)
                 if kind == "task" and _stop_after_terminal_task_boundary(
                     task.id if task else None,
@@ -435,6 +476,9 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
                 _flush(messages)
                 if _stop_for_stale_task_input(node):
                     restart_for_stale_input = True
+                    break
+                if _stop_for_context_limit(messages):
+                    restart_for_context = True
                     break
                 boundary_messages = _messages_with_pending_tool_returns(node, messages)
                 if kind == "task" and _stop_after_terminal_task_boundary(
@@ -463,6 +507,9 @@ async def run_session_turn(session_id: int, run_id: str = "") -> int:
 
     if restart_for_stale_input:
         raise _StaleTaskInputRestart(persisted_count)
+
+    if restart_for_context:
+        raise _ContextLimitRestart(persisted_count)
 
     if seen:
         # Atomic: persist the turn's reply AND advance the event cursor

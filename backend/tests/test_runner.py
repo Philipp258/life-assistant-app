@@ -1792,3 +1792,51 @@ def test_close_dangling_tool_calls_appends_synthetic_returns():
     assert returns[0].tool_call_id == "b"
     assert returns[0].tool_name == "y"
     assert "interrupted" in str(returns[0].content).lower()
+
+
+def test_context_growth_breaks_turn_and_reschedules(_test_db, _silence_main_wake, monkeypatch):
+    """A turn whose tool-call loop balloons past the growth ceiling stops
+    cleanly mid-loop and re-wakes, instead of shipping an oversized prompt.
+
+    The fat tool call + return are persisted before the break so the re-wake
+    loads provider-valid history that turn-start compaction can fold.
+    """
+    from app.config import settings as cfg
+
+    Session = _test_db
+    task_id, chat_id = _make_task_with_chat(Session)
+    _seed_user_message(Session, chat_id)
+
+    scheduled: list[int] = []
+    monkeypatch.setattr(runner, "schedule_wake", lambda sid: scheduled.append(sid))
+    # Tiny ceiling + a fat tool return → the guard trips after one tool round.
+    monkeypatch.setattr(cfg, "compaction_max_turn_growth_tokens", 100)
+    monkeypatch.setattr(task_tools, "do_list_tasks", lambda **_kwargs: {"items": "x" * 5_000})
+
+    calls = 0
+
+    def handler(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return ModelResponse(
+                parts=[ToolCallPart(tool_name="list_tasks", args={}, tool_call_id="fat")]
+            )
+        return ModelResponse(parts=[TextPart(content="should not reach here")])
+
+    agent = get_agent()
+    with agent.override(model=build_function_model(handler)):
+        result = asyncio.run(runner.wake_session(chat_id))
+
+    assert result.outcome == "restarted"
+    assert scheduled == [chat_id]
+    # Broke within a round of crossing the ceiling — not a runaway loop.
+    assert calls <= 2
+    # No stall/error/reschedule counted — a restart is not a failed attempt.
+    assert _get_counters(Session, task_id) == (0, 0, 0)
+
+    parts = _parts_in_session(Session, chat_id)
+    assert any(p.get("part_kind") == "tool-call" and p.get("tool_call_id") == "fat" for p in parts)
+    assert any(
+        p.get("part_kind") == "tool-return" and p.get("tool_call_id") == "fat" for p in parts
+    )

@@ -137,6 +137,40 @@ def test_grep_truncates_long_match_lines(tmp_path: Path) -> None:
     assert out["matches"][0]["text"].endswith("...(truncated)")
 
 
+# --- glob: page, never silently drop ----------------------------------
+
+
+def test_glob_paginates_and_is_lossless(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(fs_tools, "REPO_ROOT", tmp_path)
+    for i in range(25):
+        (tmp_path / f"f{i:02d}.txt").write_text("x")
+
+    page1 = fs_tools.do_glob_files("*.txt", offset=0, limit=10)
+    assert page1["total"] == 25
+    assert len(page1["matches"]) == 10
+    assert page1["has_more"] is True
+    assert page1["next_offset"] == 10
+
+    seen: set[str] = set()
+    offset: int | None = 0
+    while offset is not None:
+        page = fs_tools.do_glob_files("*.txt", offset=offset, limit=10)
+        seen.update(page["matches"])
+        offset = page["next_offset"]
+    assert len(seen) == 25  # every match reachable by paging
+
+
+def test_glob_clamps_limit_to_max(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(fs_tools, "REPO_ROOT", tmp_path)
+    for i in range(fs_tools.GLOB_PAGE_MAX + 50):
+        (tmp_path / f"f{i:04d}.txt").write_text("x")
+
+    out = fs_tools.do_glob_files("*.txt", limit=1_000_000)
+    assert out["limit"] == fs_tools.GLOB_PAGE_MAX
+    assert len(out["matches"]) == fs_tools.GLOB_PAGE_MAX
+    assert out["has_more"] is True
+
+
 # --- read_file: windowed lines, lossless -------------------------------
 
 
@@ -213,3 +247,57 @@ def test_read_knowledge_clamps_limit_to_max(tmp_path, monkeypatch) -> None:
     assert len(out["body"]) == READ_KNOWLEDGE_PAGE_MAX
     assert out["has_more"] is True
     assert out["next_offset"] == READ_KNOWLEDGE_PAGE_MAX
+
+
+# --- web_fetch: windowed body, lossless -------------------------------
+
+
+class _StubResp:
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.status_code = 200
+        self.headers = {"content-type": "text/plain"}
+        self.url = "https://example.test/"
+
+
+def test_web_fetch_windows_body_losslessly(monkeypatch) -> None:
+    from app.agent.tools import web as web_tools
+
+    big = "".join(f"chunk {i} " for i in range(20_000))
+    monkeypatch.setattr(
+        web_tools.httpx,
+        "get",
+        lambda url, follow_redirects, timeout: _StubResp(big),
+        raising=True,
+    )
+
+    first = web_tools.do_web_fetch("https://example.test/", offset=0, limit=5_000)
+    assert first["total_chars"] == len(big)
+    assert len(first["body"]) == 5_000
+    assert first["has_more"] is True
+    assert first["truncated"] is True  # back-compat alias tracks has_more
+
+    rebuilt = ""
+    offset: int | None = 0
+    while offset is not None:
+        win = web_tools.do_web_fetch("https://example.test/", offset=offset, limit=5_000)
+        rebuilt += win["body"]
+        offset = win["next_offset"]
+    assert rebuilt == big
+
+
+def test_web_fetch_clamps_limit_to_max(monkeypatch) -> None:
+    from app.agent.tools import web as web_tools
+
+    big = "x" * (web_tools.MAX_BODY_CHARS * 3)
+    monkeypatch.setattr(
+        web_tools.httpx,
+        "get",
+        lambda url, follow_redirects, timeout: _StubResp(big),
+        raising=True,
+    )
+
+    out = web_tools.do_web_fetch("https://example.test/", limit=10_000_000)
+    assert out["limit"] == web_tools.MAX_BODY_CHARS
+    assert len(out["body"]) == web_tools.MAX_BODY_CHARS
+    assert out["has_more"] is True
