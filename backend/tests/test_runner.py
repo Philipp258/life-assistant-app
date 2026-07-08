@@ -1840,3 +1840,59 @@ def test_context_growth_breaks_turn_and_reschedules(_test_db, _silence_main_wake
     assert any(
         p.get("part_kind") == "tool-return" and p.get("tool_call_id") == "fat" for p in parts
     )
+
+
+def test_backoff_gap_grows_and_caps():
+    """Main re-wake backoff mirrors the per-task curve: 60s doubling to 960s."""
+    from app.chat.runner.watchdog import (
+        WATCHDOG_BASE_GAP_SECONDS,
+        WATCHDOG_MAX_GAP_SECONDS,
+        _backoff_gap,
+    )
+
+    assert _backoff_gap(0) == WATCHDOG_BASE_GAP_SECONDS
+    assert _backoff_gap(1) == 120
+    assert _backoff_gap(2) == 240
+    assert _backoff_gap(4) == WATCHDOG_MAX_GAP_SECONDS
+    assert _backoff_gap(9) == WATCHDOG_MAX_GAP_SECONDS  # capped, never grows unbounded
+
+
+def test_main_wake_error_streak_tracks_and_resets():
+    """The in-memory main-session error counter the watchdog reads for backoff."""
+    from app.chat.runner import state
+
+    sid = 987654
+    state.note_wake_success(sid)  # clean slate regardless of prior tests
+    assert state.consecutive_errors(sid) == 0
+    assert state.note_wake_error(sid) == 1
+    assert state.note_wake_error(sid) == 2
+    assert state.consecutive_errors(sid) == 2
+    state.note_wake_success(sid)
+    assert state.consecutive_errors(sid) == 0
+
+
+def test_latest_is_main_error_notice_detects_unanswered_card(_test_db):
+    """Cap-at-one guard: an error tail is detected; a fresh user reply clears it."""
+    from app.chat.runner.messages import MAIN_ERROR_TEMPLATE
+    from app.chat.runner.wake import _latest_is_main_error_notice
+    from app.chat.service import save_new_messages
+
+    Session = _test_db
+    with Session() as s:
+        chat = ChatSession()
+        s.add(chat)
+        s.commit()
+        sid = chat.id
+
+    # Tail is an unanswered error card → the runner would skip stacking another.
+    body = MAIN_ERROR_TEMPLATE.format(error="ModelHTTPError 429 (glm-5.1)")
+    with Session() as s:
+        save_new_messages(s, sid, [ModelResponse(parts=[TextPart(content=body)])])
+    with Session() as s:
+        assert _latest_is_main_error_notice(s, sid) is True
+
+    # A fresh user message makes the tail a request again → a real retry records.
+    with Session() as s:
+        save_new_messages(s, sid, [ModelRequest(parts=[UserPromptPart(content="try again")])])
+    with Session() as s:
+        assert _latest_is_main_error_notice(s, sid) is False

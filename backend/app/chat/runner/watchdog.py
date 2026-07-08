@@ -17,7 +17,13 @@ from app.db import SessionLocal
 from app.tasks.models import Task
 
 from .claims import list_in_flight_tasks
-from .state import _active_sessions, _last_wake_at, _reap_session_state, _session_locks
+from .state import (
+    _active_sessions,
+    _last_wake_at,
+    _reap_session_state,
+    _session_locks,
+    consecutive_errors,
+)
 from .wake import _wake_logged
 
 logger = logging.getLogger(__name__)
@@ -35,19 +41,27 @@ WATCHDOG_BASE_GAP_SECONDS = 60.0
 WATCHDOG_MAX_GAP_SECONDS = 960.0  # 60 * 2**4
 
 
+def _backoff_gap(consecutive_error_count: int) -> float:
+    """Minimum re-wake gap, in seconds, for a given error streak.
+
+    No errors → base 60s. Each consecutive error doubles the gap, capped
+    at `WATCHDOG_MAX_GAP_SECONDS`.
+    """
+    if consecutive_error_count <= 0:
+        return WATCHDOG_BASE_GAP_SECONDS
+    return min(
+        WATCHDOG_BASE_GAP_SECONDS * (2 ** min(consecutive_error_count, 4)),
+        WATCHDOG_MAX_GAP_SECONDS,
+    )
+
+
 def _gap_for(task: Task) -> float:
     """Per-task minimum re-wake gap, in seconds.
 
-    No errors → base 60s. Each consecutive error doubles the gap, capped
-    at `WATCHDOG_MAX_GAP_SECONDS`. Stalls do not back off — the next tick
-    after the base gap re-fires them with the reminder injected.
+    Stalls do not back off — the next tick after the base gap re-fires
+    them with the reminder injected; only the error streak backs off.
     """
-    if task.consecutive_errors == 0:
-        return WATCHDOG_BASE_GAP_SECONDS
-    return min(
-        WATCHDOG_BASE_GAP_SECONDS * (2 ** min(task.consecutive_errors, 4)),
-        WATCHDOG_MAX_GAP_SECONDS,
-    )
+    return _backoff_gap(task.consecutive_errors)
 
 
 async def _watchdog_loop() -> None:
@@ -98,7 +112,12 @@ async def _watchdog_loop() -> None:
                 and not _session_locks[main_id].locked()
             ):
                 last = _last_wake_at.get(main_id)
-                if last is None or (now - last) >= WATCHDOG_BASE_GAP_SECONDS:
+                # Back off the same way tasks do: a main wake that keeps
+                # erroring against a downed provider must not be re-poked
+                # every 60s (the 481-card incident). Streak is tracked in
+                # `state._consecutive_errors` and reset on a clean wake.
+                gap = _backoff_gap(consecutive_errors(main_id))
+                if last is None or (now - last) >= gap:
                     logger.info("runner: watchdog waking main session %d (undrained)", main_id)
                     asyncio.get_running_loop().create_task(_wake_logged(main_id))
         except asyncio.CancelledError:

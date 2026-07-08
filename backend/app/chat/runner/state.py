@@ -33,6 +33,14 @@ _active_sessions: set[int] = set()
 # Used by the watchdog to avoid re-poking sessions we just ran.
 _last_wake_at: dict[int, float] = {}
 
+# Consecutive failed main-session wakes, keyed by session id. Tasks track
+# this on the Task row (`Task.consecutive_errors`); the singleton main
+# session has no task, so the watchdog reads this in-memory counter to back
+# off its re-poke exactly the way `_gap_for` backs off an errored task.
+# Reset on any successful main wake; reaped with the rest of the per-session
+# state once the session goes idle.
+_consecutive_errors: dict[int, int] = {}
+
 # Per-session one-shot voice-mode hint set by the WebSocket input handler
 # (`app.chat.ws`) and consumed by the next `run_session_turn`. Voice is a
 # property of a user-typed turn; autonomous wakes are never voice. Single
@@ -52,6 +60,21 @@ def set_pending_voice(session_id: int, voice: bool) -> None:
         _pending_voice[session_id] = True
     else:
         _pending_voice.pop(session_id, None)
+
+
+def note_wake_error(session_id: int) -> int:
+    """Record a failed wake; returns the new consecutive-error count."""
+    _consecutive_errors[session_id] = _consecutive_errors.get(session_id, 0) + 1
+    return _consecutive_errors[session_id]
+
+
+def note_wake_success(session_id: int) -> None:
+    """Clear the consecutive-error streak after a wake that ran cleanly."""
+    _consecutive_errors.pop(session_id, None)
+
+
+def consecutive_errors(session_id: int) -> int:
+    return _consecutive_errors.get(session_id, 0)
 
 
 def set_main_loop(loop: asyncio.AbstractEventLoop) -> None:
@@ -94,4 +117,5 @@ def _reap_session_state(now: float) -> None:
             continue
         _last_wake_at.pop(sid, None)
         _pending_voice.pop(sid, None)
+        _consecutive_errors.pop(sid, None)
         _session_locks.pop(sid, None)
