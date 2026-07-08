@@ -157,6 +157,56 @@ describe("ChatStore", () => {
     expect(ids(store)).toEqual(["1", "3", "2"]);
   });
 
+  it("adopts run state from a snapshot that carries is_running", () => {
+    const store = new ChatStore(7, [msg("1", "user")]);
+    store.dispatch({ type: "runner_started", session_id: 7, run_id: "abc" } as ChatWireEvent);
+    expect(store.getSnapshot().isRunning).toBe(true);
+
+    // A reconnect snapshot reporting the turn is done heals the stuck
+    // spinner even though no runner_finished was ever observed.
+    store.dispatch({
+      type: "snapshot",
+      session_id: 7,
+      messages: [msg("1", "user"), msg("2", "assistant")],
+      is_running: false,
+    } as ChatWireEvent);
+
+    expect(store.getSnapshot().isRunning).toBe(false);
+  });
+
+  it("leaves run state untouched when a snapshot omits is_running", () => {
+    const store = new ChatStore(7, [msg("1", "user")]);
+    store.dispatch({ type: "runner_started", session_id: 7, run_id: "abc" } as ChatWireEvent);
+
+    store.dispatch({
+      type: "snapshot",
+      session_id: 7,
+      messages: [msg("1", "user")],
+    });
+
+    expect(store.getSnapshot().isRunning).toBe(true);
+  });
+
+  it("tracks the active user id at the turn boundary", () => {
+    const store = new ChatStore(7, [msg("1", "user"), msg("2", "user")]);
+    store.dispatch({ type: "runner_started", session_id: 7, run_id: "abc" } as ChatWireEvent);
+
+    expect(store.getSnapshot().activeUserId).toBe("2");
+  });
+
+  it("treats the tail as active when a snapshot starts a run on reconnect", () => {
+    const store = new ChatStore(7, [msg("1", "user")]);
+
+    store.dispatch({
+      type: "snapshot",
+      session_id: 7,
+      messages: [msg("1", "user")],
+      is_running: true,
+    } as ChatWireEvent);
+
+    expect(store.getSnapshot()).toMatchObject({ isRunning: true, activeUserId: "1" });
+  });
+
   it("ignores redundant snapshots and upserts without notifying subscribers", () => {
     const store = new ChatStore(7, [msg("1", "user", "hello")]);
     let notified = 0;

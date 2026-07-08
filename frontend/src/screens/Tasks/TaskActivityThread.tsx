@@ -5,6 +5,7 @@ import {
   ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  useAui,
   useAuiState,
 } from "@assistant-ui/react";
 import {
@@ -13,13 +14,13 @@ import {
   CopyIcon,
   PencilIcon,
   RefreshCwIcon,
-  SquareIcon,
   User,
 } from "lucide-react";
 import {
   useRef,
   useState,
   type FC,
+  type KeyboardEventHandler,
   type MutableRefObject,
   type ReactNode,
 } from "react";
@@ -381,6 +382,25 @@ function formatRelative(at: string | number | Date): string {
 }
 
 function CommentComposer({ placeholder }: { placeholder: string }) {
+  const aui = useAui();
+  const isEmpty = useAuiState((s) => s.composer.isEmpty);
+  const isRunning = useAuiState((s) => s.thread.isRunning);
+
+  const handleKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
+    // Allow posting while a turn runs (it queues for the next turn);
+    // assistant-ui would otherwise swallow the submit key. Skip during IME
+    // composition (Android keystroke-drop bug).
+    if (
+      isRunning &&
+      e.key === "Enter" &&
+      !e.shiftKey &&
+      !e.nativeEvent.isComposing
+    ) {
+      e.preventDefault();
+      void aui.thread().composer().send();
+    }
+  };
+
   return (
     <ComposerPrimitive.Root className="relative flex w-full flex-col rounded-xl border border-life-line bg-life-card transition-shadow focus-within:border-life-accent/60 focus-within:ring-2 focus-within:ring-life-accent/20">
       <ComposerPrimitive.Input
@@ -388,33 +408,32 @@ function CommentComposer({ placeholder }: { placeholder: string }) {
         className="min-h-[64px] w-full resize-none rounded-t-xl bg-transparent px-3 py-2 text-[13px] text-life-ink outline-none placeholder:text-life-ink-3"
         rows={2}
         aria-label="Add a comment"
+        onKeyDown={handleKeyDown}
       />
       <div className="flex items-center justify-between border-t border-life-line px-3 py-2">
         <span className="text-[11px] text-life-ink-3">⌘ + Enter to post</span>
-        <AuiIf condition={(s) => !s.thread.isRunning}>
-          <ComposerPrimitive.Send
-            render={
-              <Button size="sm" className="gap-1.5 rounded-full">
-                <ArrowUpIcon className="h-3.5 w-3.5" />
-                Comment
-              </Button>
-            }
-          />
-        </AuiIf>
-        <AuiIf condition={(s) => s.thread.isRunning}>
-          <ComposerPrimitive.Cancel
-            render={
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 rounded-full"
-              >
-                <SquareIcon className="h-3 w-3 fill-current" />
-                Stop
-              </Button>
-            }
-          />
-        </AuiIf>
+        <div className="flex items-center gap-2">
+          {isRunning && (
+            <span
+              className="flex items-center gap-1 text-life-ink-3"
+              role="status"
+              aria-label="Assistant is working"
+            >
+              <span className="size-1.5 animate-pulse rounded-full bg-current" />
+              <span className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:150ms]" />
+              <span className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:300ms]" />
+            </span>
+          )}
+          <Button
+            size="sm"
+            className="gap-1.5 rounded-full"
+            disabled={isEmpty}
+            onClick={() => void aui.thread().composer().send()}
+          >
+            <ArrowUpIcon className="h-3.5 w-3.5" />
+            Comment
+          </Button>
+        </div>
       </div>
     </ComposerPrimitive.Root>
   );

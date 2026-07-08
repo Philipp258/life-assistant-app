@@ -4,6 +4,11 @@ import type { WireMessage } from "./convertChatMessage";
 export type ChatStoreSnapshot = {
   messages: WireMessage[];
   isRunning: boolean;
+  // Id of the user message the live turn is answering. Anything that
+  // arrives after it while a run is in flight is a queued follow-up, not
+  // part of the active turn — the display layer uses this to badge
+  // queued messages without mis-flagging the one being processed.
+  activeUserId: string | null;
 };
 
 type Listener = () => void;
@@ -76,6 +81,13 @@ function sortCommitted(messages: WireMessage[]): WireMessage[] {
     .map((item) => item.message);
 }
 
+function lastUserId(messages: WireMessage[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "user") return messages[i].id;
+  }
+  return null;
+}
+
 function textDraft(runId: string, text: string): WireMessage {
   return {
     id: `run-${runId}`,
@@ -91,6 +103,7 @@ export class ChatStore {
   private draft: WireMessage | null = null;
   private running = false;
   private runId = "pending";
+  private activeUserId: string | null = null;
   private snapshot: ChatStoreSnapshot;
   private listeners = new Set<Listener>();
 
@@ -99,7 +112,11 @@ export class ChatStore {
     initialMessages: WireMessage[],
   ) {
     this.committed = sortCommitted(initialMessages.map(cloneMessage));
-    this.snapshot = { messages: this.committed, isRunning: false };
+    this.snapshot = {
+      messages: this.committed,
+      isRunning: false,
+      activeUserId: null,
+    };
   }
 
   subscribe = (listener: Listener): (() => void) => {
@@ -115,11 +132,14 @@ export class ChatStore {
     if (event.session_id !== this.sessionId) return;
 
     switch (event.type) {
-      case "snapshot":
+      case "snapshot": {
+        const isRunning = (event as { is_running?: unknown }).is_running;
         this.replaceCommitted(
           Array.isArray(event.messages) ? (event.messages as WireMessage[]) : [],
+          typeof isRunning === "boolean" ? isRunning : undefined,
         );
         return;
+      }
       case "message_upsert":
         this.upsertCommitted(
           event as ChatWireEvent & {
@@ -138,16 +158,19 @@ export class ChatStore {
         this.committed = [];
         this.draft = null;
         this.running = false;
+        this.activeUserId = null;
         this.recompute();
         return;
       case "runner_started":
         this.running = true;
         this.runId = String((event as { run_id?: unknown }).run_id ?? Date.now());
+        this.activeUserId = lastUserId(this.committed);
         this.recompute();
         return;
       case "message_start":
         this.running = true;
         this.runId = String((event as { run_id?: unknown }).run_id ?? this.runId);
+        if (this.activeUserId === null) this.activeUserId = lastUserId(this.committed);
         this.recompute();
         return;
       case "part_delta": {
@@ -172,7 +195,7 @@ export class ChatStore {
     this.recompute();
   }
 
-  private replaceCommitted(messages: WireMessage[]): void {
+  private replaceCommitted(messages: WireMessage[], isRunning?: boolean): void {
     const previousById = new Map(this.committed.map((message) => [message.id, message]));
     const next = sortCommitted(
       messages.map((message) => {
@@ -182,6 +205,15 @@ export class ChatStore {
     );
     const committedChanged = !sameMessageRefs(this.committed, next);
     this.committed = next;
+    // The snapshot is the channel's authoritative resync: when it carries
+    // run state, adopt it so a missed runner_finished (dropped socket,
+    // mid-run subscribe) can't leave the composer stuck. On the
+    // not-running→running edge, treat the current tail as the message the
+    // turn is answering — anything typed afterwards queues.
+    if (isRunning !== undefined) {
+      if (isRunning && !this.running) this.activeUserId = lastUserId(this.committed);
+      this.running = isRunning;
+    }
     if (
       !this.running ||
       this.committed.length === 0 ||
@@ -245,11 +277,16 @@ export class ChatStore {
     if (
       !force &&
       this.snapshot.isRunning === this.running &&
+      this.snapshot.activeUserId === this.activeUserId &&
       sameMessageRefs(this.snapshot.messages, messages)
     ) {
       return;
     }
-    this.snapshot = { messages, isRunning: this.running };
+    this.snapshot = {
+      messages,
+      isRunning: this.running,
+      activeUserId: this.activeUserId,
+    };
     for (const listener of [...this.listeners]) listener();
   }
 }

@@ -83,6 +83,19 @@ def test_resync_replays_db_snapshot(client, _test_db):
         assert "offline answer" in snapshot_texts(snap, "assistant")
 
 
+def test_snapshot_reports_idle_run_state(client):
+    main_id = client.get("/api/chat/main").json()["session_id"]
+
+    with client.websocket_connect("/api/ws") as ws:
+        ws.send_json({"type": "subscribe", "session_ids": [main_id]})
+        snap = ws.receive_json()
+        assert snap["type"] == "snapshot"
+        # No wake is in flight, so the authoritative snapshot tells the
+        # client the composer is free — this is what heals a stuck spinner
+        # after a missed runner_finished.
+        assert snap["is_running"] is False
+
+
 def test_task_updates_forward_over_session_subscription(client):
     created = client.post("/api/tasks", json={"title": "Watch me"})
     assert created.status_code == 201
