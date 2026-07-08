@@ -13,13 +13,16 @@ import logging
 import secrets
 
 from pydantic_ai.messages import ModelResponse, TextPart
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.chat import events, pubsub
 from app.chat.service import force_compact_history, get_or_create_main_session, save_new_messages
+from app.chat.service.history import parse_message
 from app.chat.session_policy import resolve_kind
 from app.db import SessionLocal
 from app.tasks.models import Task
-from app.chat.models import ChatSession
+from app.chat.models import ChatSession, Message
 
 from .claims import (
     _claim_task_run,
@@ -34,6 +37,7 @@ from .messages import (
     RunResult,
     WakeOutcome,
     _is_context_window_error,
+    _is_main_error_notice,
     _sanitize_error_text,
 )
 from .outcomes import _persist_wake_outcome
@@ -42,11 +46,31 @@ from .state import (
     _session_locks,
     _track_active,
     get_main_loop,
+    note_wake_error,
+    note_wake_success,
 )
 from .turn import run_session_turn
 from .messages import _ContextLimitRestart, _StaleTaskInputRestart
 
 logger = logging.getLogger(__name__)
+
+
+def _latest_is_main_error_notice(db: Session, session_id: int) -> bool:
+    """True if the session's most recent visible message is an error card.
+
+    Used to avoid stacking a second identical "wasn't answered" card when
+    the watchdog re-pokes main against a still-downed provider.
+    """
+    row = db.scalars(
+        select(Message)
+        .where(Message.session_id == session_id, Message.archived_at.is_(None))
+        .order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return False
+    message = parse_message(row)
+    return message is not None and _is_main_error_notice(message)
 
 
 def wake_main_for_terminal(task_session_id: int) -> None:
@@ -230,6 +254,7 @@ async def wake_session(session_id: int) -> RunResult:
                 else:
                     outcome = "errored" if errored else "completed"
                     if not errored:
+                        note_wake_success(session_id)
                         # A task that terminated *during* this main turn
                         # recorded a fresh handoff the drain hasn't seen;
                         # re-wake until the cursor catches up.
@@ -237,22 +262,30 @@ async def wake_session(session_id: int) -> RunResult:
                             if events.has_undrained_events(db, session_id):
                                 schedule_wake(session_id)
                     else:
+                        # Track the streak so the watchdog backs off its
+                        # re-poke of main (mirrors the per-task `_gap_for`).
+                        note_wake_error(session_id)
                         # Surface the failure to the user instead of
-                        # silently losing the turn. Auto-retry would risk
-                        # a hot loop against a downed provider (the same
-                        # reasoning as the task error path); a single
-                        # visible message lets the user retry. Their next
-                        # message drives a fresh turn normally.
+                        # silently losing the turn — but only once. The
+                        # watchdog re-pokes main every backoff gap while task
+                        # events stay undrained, and a failed turn never
+                        # drains them; without this guard a downed provider
+                        # stacks one identical card per tick (the 481-card
+                        # incident). Skip when the tail is already an
+                        # unanswered error card. A fresh user message makes
+                        # the tail a request again, so a real retry still
+                        # records its own failure.
                         body = MAIN_ERROR_TEMPLATE.format(
                             error=error_text or "unknown error",
                         )
                         try:
                             with SessionLocal() as db:
-                                save_new_messages(
-                                    db,
-                                    session_id,
-                                    [ModelResponse(parts=[TextPart(content=body)])],
-                                )
+                                if not _latest_is_main_error_notice(db, session_id):
+                                    save_new_messages(
+                                        db,
+                                        session_id,
+                                        [ModelResponse(parts=[TextPart(content=body)])],
+                                    )
                         except Exception:
                             logger.exception(
                                 "runner: failed to surface main-turn error for session %d",

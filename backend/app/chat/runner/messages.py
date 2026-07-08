@@ -12,7 +12,14 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic_ai.exceptions import ModelHTTPError
-from pydantic_ai.messages import ModelRequest, SystemPromptPart, UserPromptPart
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    SystemPromptPart,
+    TextPart,
+    UserPromptPart,
+)
 
 from app.agent.providers.codex_auth import AuthExpiredError, AuthInvalidError
 from app.datetime_utils import utc_now
@@ -96,11 +103,23 @@ ERROR_RETRY_TEMPLATE = (
 
 # Main chat has no autonomous retry loop; on a failed turn we surface
 # the error once so the user can simply send again (vs. silently
-# losing the turn).
-MAIN_ERROR_TEMPLATE = (
-    "Something went wrong handling that — your message wasn't answered. "
-    "Please try again.\n\nError: `{error}`"
-)
+# losing the turn). The watchdog still re-pokes main while it has
+# undrained task events, so a downed provider could otherwise append one
+# of these cards per tick — `_is_main_error_notice` lets the runner skip
+# stacking a fresh card when the tail is already an unanswered error.
+MAIN_ERROR_PREFIX = "Something went wrong handling that — your message wasn't answered."
+MAIN_ERROR_TEMPLATE = MAIN_ERROR_PREFIX + " Please try again.\n\nError: `{error}`"
+
+
+def _is_main_error_notice(message: ModelMessage) -> bool:
+    """True if `message` is a persisted MAIN_ERROR card (any error text)."""
+    if not isinstance(message, ModelResponse):
+        return False
+    return any(
+        isinstance(part, TextPart) and part.content.startswith(MAIN_ERROR_PREFIX)
+        for part in message.parts
+    )
+
 
 ERROR_PAUSE_TASK_CHAT_TEMPLATE = (
     "{assistant_name} hit errors {count} times in a row while running this task, so "
