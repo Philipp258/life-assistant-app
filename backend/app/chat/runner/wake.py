@@ -44,7 +44,7 @@ from .state import (
     get_main_loop,
 )
 from .turn import run_session_turn
-from .messages import _StaleTaskInputRestart
+from .messages import _ContextLimitRestart, _StaleTaskInputRestart
 
 logger = logging.getLogger(__name__)
 
@@ -144,16 +144,27 @@ async def wake_session(session_id: int) -> RunResult:
                 errored = False
                 error_text: str | None = None
                 stale_restart = False
+                context_restart = False
                 try:
                     with _track_active(session_id):
                         count = await run_session_turn(session_id, run_id)
                 except _StaleTaskInputRestart as restart:
                     stale_restart = True
                     count = restart.new_message_count
+                except _ContextLimitRestart as restart:
+                    # Proactive mid-turn break: the turn crossed the context
+                    # ceiling and persisted partial progress. Re-wake so the
+                    # next turn loads freshly-compacted history.
+                    context_restart = True
+                    count = restart.new_message_count
                 except Exception as exc:
-                    if kind == "task" and task_id is not None and _is_context_window_error(exc):
+                    # Reactive fallback: the provider itself rejected the
+                    # request for being too long. Force a compaction and retry
+                    # once. Applies to main and task sessions alike — both
+                    # share one compactable history store.
+                    if _is_context_window_error(exc):
                         logger.warning(
-                            "runner: context-window error for task session %d; "
+                            "runner: context-window error for session %d; "
                             "compacting and retrying once",
                             session_id,
                             exc_info=True,
@@ -162,13 +173,16 @@ async def wake_session(session_id: int) -> RunResult:
                             compacted = await force_compact_history(session_id)
                             if not compacted:
                                 raise RuntimeError(
-                                    "context window exceeded, and no task-chat history "
-                                    "could be compacted; check recent tool return sizes"
+                                    "context window exceeded, and no history could be "
+                                    "compacted; check recent tool return sizes"
                                 ) from exc
                             with _track_active(session_id):
                                 count = await run_session_turn(session_id, run_id)
                         except _StaleTaskInputRestart as restart:
                             stale_restart = True
+                            count = restart.new_message_count
+                        except _ContextLimitRestart as restart:
+                            context_restart = True
                             count = restart.new_message_count
                         except Exception as retry_exc:
                             errored = True
@@ -186,7 +200,7 @@ async def wake_session(session_id: int) -> RunResult:
 
                 if kind == "task":
                     assert task_id is not None
-                    if stale_restart:
+                    if stale_restart or context_restart:
                         outcome = "restarted"
                         schedule_wake(session_id)
                     else:
@@ -208,6 +222,11 @@ async def wake_session(session_id: int) -> RunResult:
                                 "runner: main wake for terminal task session %d failed",
                                 session_id,
                             )
+                elif context_restart:
+                    # Main turn broke at the context ceiling — re-wake so it
+                    # resumes against freshly-compacted history.
+                    outcome = "restarted"
+                    schedule_wake(session_id)
                 else:
                     outcome = "errored" if errored else "completed"
                     if not errored:

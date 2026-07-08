@@ -65,9 +65,12 @@ class Settings(BaseSettings):
 
     # pydantic-ai per-run model request cap. The library default is 50, which
     # is too low for long autonomous task turns because every tool-call round
-    # trip can consume another model request. Life Assistant disables this request-count
-    # cap explicitly; token/provider limits still apply.
-    agent_request_limit: int | None = None
+    # trip can consume another model request. We set a high explicit cap: big
+    # enough for deep autonomous work, low enough to be a hard backstop against
+    # a degenerate tool-call loop running forever. The token-based mid-turn
+    # guard (`compaction_max_turn_tokens`) is the primary bound on context size;
+    # this just stops pathological request storms. Token/provider limits also apply.
+    agent_request_limit: int | None = 150
 
     # Main-chat compaction. When the persisted history (excluding rows
     # already marked `compacted_at`) exceeds `compaction_trigger_tokens`,
@@ -77,6 +80,22 @@ class Settings(BaseSettings):
     # between compaction events.
     compaction_trigger_tokens: int = 80_000
     compaction_keep_groups: int = 8
+
+    # Mid-turn growth ceiling. Turn-start compaction only fires once per wake;
+    # a single turn's tool-call loop (grep/read/glob returns) can then balloon
+    # the live context far past `compaction_trigger_tokens` before the turn
+    # ends. When the tokens *added during this turn* cross this ceiling, the
+    # runner breaks cleanly (persisting partial progress + closing dangling tool
+    # calls) and re-wakes, so the next turn loads freshly-compacted history.
+    #
+    # Deliberately a per-turn-GROWTH bound, not an absolute base+growth one: a
+    # re-waked turn starts at zero added tokens, so it always makes forward
+    # progress instead of spinning when the loaded history alone is large
+    # (e.g. a big read_file the compactor keeps in the recent groups). Soft
+    # total ceiling ≈ compaction_trigger_tokens + this. The provider's own
+    # context-window error is the backstop if a single loaded turn still
+    # overflows (see `force_compact_history` in the runner).
+    compaction_max_turn_growth_tokens: int = 80_000
 
     # Web Push (VAPID). Generate with `uv run python backend/scripts/gen_vapid_keys.py`.
     # `vapid_private_key_path` may be either an absolute path or relative to

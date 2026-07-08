@@ -12,9 +12,10 @@ def default_usage_limits() -> UsageLimits:
 
     pydantic-ai defaults ``request_limit`` to 50 when no ``UsageLimits`` is
     supplied. That is too low for Life Assistant's long autonomous task turns, where each
-    tool-call round trip can consume another model request. Supplying
-    ``request_limit=None`` disables that request-count cap explicitly instead of
-    inheriting the library default silently. Token/provider limits still apply.
+    tool-call round trip can consume another model request. We raise it to an
+    explicit, higher cap (``settings.agent_request_limit``) that still acts as a
+    hard backstop against a runaway tool-call loop. Setting it to ``None``
+    disables the request-count cap entirely. Token/provider limits still apply.
     """
 
     return UsageLimits(request_limit=settings.agent_request_limit)

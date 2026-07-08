@@ -48,6 +48,17 @@ class _StaleTaskInputRestart(Exception):
         self.new_message_count = new_message_count
 
 
+class _ContextLimitRestart(Exception):
+    """Internal non-error signal: the in-flight turn crossed the mid-turn token
+    ceiling, so it was broken cleanly. Re-wake so turn-start compaction folds the
+    now-persisted tool output before the next model request. Applies to both
+    main and task sessions."""
+
+    def __init__(self, new_message_count: int) -> None:
+        super().__init__("turn exceeded context ceiling during runner loop")
+        self.new_message_count = new_message_count
+
+
 # Streak at which we stop trusting the agent to converge on its own and
 # flip the task back to the user with an explanatory message.
 STALL_ESCALATION_THRESHOLD = 3

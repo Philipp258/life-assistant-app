@@ -10,6 +10,7 @@ from pydantic_ai import Agent
 from sqlalchemy.orm import Session
 
 from app.agent.deps import AgentDeps
+from app.agent.tools._paging import normalize_page, window_text
 from app.agent.tools._task_scope import only_in_task_chat
 from app.db import SessionLocal
 from app.settings import service as settings_service
@@ -42,7 +43,7 @@ def _strip_html(html: str) -> str:
     return text.strip()
 
 
-def do_web_fetch(url: str) -> dict[str, Any]:
+def do_web_fetch(url: str, offset: int = 0, limit: int = MAX_BODY_CHARS) -> dict[str, Any]:
     try:
         resp = httpx.get(url, follow_redirects=True, timeout=DEFAULT_TIMEOUT)
     except httpx.HTTPError as exc:
@@ -53,16 +54,24 @@ def do_web_fetch(url: str) -> dict[str, Any]:
     if "html" in content_type.lower():
         body = _strip_html(body)
 
-    truncated = len(body) > MAX_BODY_CHARS
-    if truncated:
-        body = body[:MAX_BODY_CHARS]
-
+    # Window the body instead of silently dropping the tail: a long page is
+    # reachable in full by paging on `next_offset`, like read_file/read_knowledge.
+    safe_offset, safe_limit = normalize_page(
+        offset, limit, default_limit=MAX_BODY_CHARS, max_limit=MAX_BODY_CHARS
+    )
+    win = window_text(body, safe_offset, safe_limit)
     return {
         "url": str(resp.url),
         "status": resp.status_code,
         "content_type": content_type,
-        "body": body,
-        "truncated": truncated,
+        "body": win["text"],
+        "total_chars": win["total_chars"],
+        "offset": win["offset"],
+        "limit": win["limit"],
+        "has_more": win["has_more"],
+        "next_offset": win["next_offset"],
+        # Back-compat alias for callers that only checked whether the body was clipped.
+        "truncated": win["has_more"],
     }
 
 
@@ -125,14 +134,18 @@ def do_web_search(
 
 def register(agent: Agent[AgentDeps, Any]) -> None:
     @agent.tool_plain(prepare=only_in_task_chat)
-    def web_fetch(url: str) -> dict[str, Any]:
-        """Fetch a URL. HTML is stripped to text. Body capped at 30000 chars.
+    def web_fetch(url: str, offset: int = 0, limit: int = MAX_BODY_CHARS) -> dict[str, Any]:
+        """Fetch a URL. HTML is stripped to text.
 
-        Follows redirects. No JS render, no auth, no cookies. Returns
-        `{url, status, content_type, body, truncated}`. Non-2xx
-        responses come back with their status — not raised.
+        Follows redirects. No JS render, no auth, no cookies. Returns a
+        `limit`-char window of the body starting at `offset` (default
+        30000 chars from the top, 30000 max). Response is `{url, status,
+        content_type, body, total_chars, offset, limit, has_more,
+        next_offset, truncated}`. Page forward by passing `next_offset`
+        as `offset` to read a long page. Non-2xx responses come back with
+        their status — not raised.
         """
-        return do_web_fetch(url)
+        return do_web_fetch(url, offset=offset, limit=limit)
 
     @agent.tool_plain(prepare=only_in_task_chat)
     def web_search(query: str, count: int = SEARCH_DEFAULT_COUNT) -> dict[str, Any]:

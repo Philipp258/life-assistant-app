@@ -30,16 +30,22 @@ class GrepMatch(TypedDict):
 MAX_LINE_CHARS = 2000
 DEFAULT_READ_LIMIT = 2000
 READ_FILE_PAGE_MAX = 5000
-GLOB_CAP = 200
+GLOB_PAGE_DEFAULT = 100
+# Upper bound on a single glob page — clamps a model-supplied `limit` so one
+# call can't flood context. Glob isn't streamed (the full match list is built
+# in memory), so `total` is exact and paging reaches every match.
+GLOB_PAGE_MAX = 200
 # Hard ceiling on matches collected before paging — bounds memory/work
 # on a pathologically broad pattern. The agent narrows the pattern if it
 # hits this; `total` in the envelope tells it the scan was capped.
 GREP_SCAN_CEILING = 1000
 GREP_PAGE_DEFAULT = 100
 # Upper bound on a single page — a model-supplied `limit` above this is
-# clamped down so one call can't flood context regardless of the arg.
-GREP_PAGE_MAX = 500
-GREP_MATCH_MAX_CHARS = 1000
+# clamped down so one call can't flood context regardless of the arg. Kept
+# deliberately small: worst-case single-call cost is GREP_PAGE_MAX matches ×
+# GREP_MATCH_MAX_CHARS chars (~25k tokens here), and the agent pages for more.
+GREP_PAGE_MAX = 200
+GREP_MATCH_MAX_CHARS = 500
 GREP_TIMEOUT_SECONDS = 30
 BINARY_SNIFF_BYTES = 8192
 
@@ -174,7 +180,7 @@ def do_edit_file(
     return {"ok": True, "path": str(target), "replacements": count if replace_all else 1}
 
 
-def do_glob_files(pattern: str) -> dict[str, Any]:
+def do_glob_files(pattern: str, offset: int = 0, limit: int = GLOB_PAGE_DEFAULT) -> dict[str, Any]:
     if Path(pattern).is_absolute():
         return _err(
             ValueError(
@@ -190,12 +196,12 @@ def do_glob_files(pattern: str) -> dict[str, Any]:
         return _err(exc)
     matches = [p for p in matches if p.is_file()]
     matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    truncated = len(matches) > GLOB_CAP
-    matches = matches[:GLOB_CAP]
-    return {
-        "matches": [str(p) for p in matches],
-        "truncated": truncated,
-    }
+    safe_offset, safe_limit = normalize_page(
+        offset, limit, default_limit=GLOB_PAGE_DEFAULT, max_limit=GLOB_PAGE_MAX
+    )
+    page = paginate([str(p) for p in matches], safe_offset, safe_limit)
+    page["matches"] = page.pop("items")
+    return page
 
 
 def _grep_with_rg(
@@ -374,15 +380,17 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
         return do_edit_file(path, old_string, new_string, replace_all=replace_all)
 
     @agent.tool_plain
-    def glob_files(pattern: str) -> dict[str, Any]:
+    def glob_files(pattern: str, offset: int = 0, limit: int = GLOB_PAGE_DEFAULT) -> dict[str, Any]:
         """Find files by glob pattern, sorted by mtime (newest first).
 
         Pattern is evaluated relative to repo root (e.g.
         `backend/**/*.py`). Absolute patterns like `/etc/**/*.conf`
         are rejected — use `bash` if you need to search outside the
-        repo. Capped at 200 results.
+        repo. Returns `{matches, total, offset, limit, has_more,
+        next_offset}`. Default page is 100 paths; `limit` is clamped to
+        200 max. Page forward by passing `next_offset` as `offset`.
         """
-        return do_glob_files(pattern)
+        return do_glob_files(pattern, offset=offset, limit=limit)
 
     @agent.tool_plain
     def grep(
@@ -401,8 +409,8 @@ def register(agent: Agent[AgentDeps, Any]) -> None:
         Returns `{matches: [{path, line, text}], total, offset, limit,
         has_more, next_offset, scan_capped}`. Page forward by passing
         `next_offset` as `offset`. Default page is 100 matches; `limit`
-        is clamped to 500 max (a bigger value just pages, it does not
-        return more in one call).
+        is clamped to 200 max (a bigger value just pages, it does not
+        return more in one call). Match text is truncated to 500 chars.
 
         `total` is the full match count and paging reaches all of it —
         UNLESS `scan_capped` is true, meaning the pattern matched more
