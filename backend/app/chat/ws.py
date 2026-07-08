@@ -106,7 +106,17 @@ def _session_exists(session_id: int) -> bool:
 def _snapshot(session_id: int) -> dict[str, Any]:
     with SessionLocal() as db:
         messages = load_session_as_ui_messages(db, session_id)
-    return {"type": "snapshot", "session_id": session_id, "messages": messages}
+    # Run state is otherwise carried only by the ephemeral
+    # runner_started/runner_finished events. Stamping it on the snapshot —
+    # the channel's authoritative resync — lets a client that missed a
+    # runner_finished (dropped socket, subscribed mid-run) reconcile its
+    # composer instead of staying stuck on the spinner forever.
+    return {
+        "type": "snapshot",
+        "session_id": session_id,
+        "messages": messages,
+        "is_running": session_id in set(runner.list_active_sessions()),
+    }
 
 
 async def chat_ws(websocket: WebSocket) -> None:

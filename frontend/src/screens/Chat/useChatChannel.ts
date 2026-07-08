@@ -150,6 +150,47 @@ function convertMessage(message: WireMessage): ThreadMessageLike {
   };
 }
 
+// Mark the user messages that arrived after the live turn started so the
+// composer/thread can badge them as "queued". The turn answers the tail
+// present when it began (`activeUserId`); anything after that is a
+// follow-up waiting for the next turn. No-op when idle.
+export function tagQueued(
+  messages: WireMessage[],
+  isRunning: boolean,
+  activeUserId: string | null,
+): WireMessage[] {
+  if (!isRunning || messages.length === 0) return messages;
+
+  let lastAssistant = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "assistant") {
+      lastAssistant = i;
+      break;
+    }
+  }
+  const trailing = messages
+    .slice(lastAssistant + 1)
+    .filter((m) => m.role === "user");
+  if (trailing.length === 0) return messages;
+
+  // The active message (and anything before it) is being processed, not
+  // queued. If it isn't in the trailing block — e.g. an assistant draft
+  // already separates it — the whole block is queued.
+  const activeIdx = trailing.findIndex((m) => m.id === activeUserId);
+  const queued = activeIdx >= 0 ? trailing.slice(activeIdx + 1) : trailing;
+  if (queued.length === 0) return messages;
+
+  const queuedIds = new Set(queued.map((m) => m.id));
+  return messages.map((m) =>
+    queuedIds.has(m.id)
+      ? ({
+          ...m,
+          metadata: { ...(m.metadata as object | undefined), queued: true },
+        } as WireMessage)
+      : m,
+  );
+}
+
 function appendMessageText(message: { content?: unknown }): string {
   const content = message.content;
   if (typeof content === "string") return content.trim();
@@ -197,8 +238,13 @@ export function useChatChannelRuntime({
     return remove;
   }, [channel, sessionId, store]);
 
+  const displayMessages = useMemo(
+    () => tagQueued(snapshot.messages, snapshot.isRunning, snapshot.activeUserId),
+    [snapshot.messages, snapshot.isRunning, snapshot.activeUserId],
+  );
+
   const runtime = useExternalStoreRuntime<WireMessage>({
-    messages: snapshot.messages,
+    messages: displayMessages,
     isRunning: snapshot.isRunning,
     convertMessage,
     onNew: async (message: any) => {

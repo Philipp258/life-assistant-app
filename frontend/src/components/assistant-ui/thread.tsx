@@ -32,7 +32,6 @@ import {
   MoreHorizontalIcon,
   PencilIcon,
   RefreshCwIcon,
-  SquareIcon,
 } from "lucide-react";
 import {
   createContext,
@@ -201,6 +200,7 @@ const ThreadSuggestionItem: FC = () => {
 const Composer: FC = () => {
   const onSlashCommand = useContext(SlashCommandContext);
   const text = useAuiState((s) => s.composer.text);
+  const isRunning = useAuiState((s) => s.thread.isRunning);
   const aui = useAui();
   const allCommands = useSlashCommands();
 
@@ -223,7 +223,22 @@ const Composer: FC = () => {
   };
 
   const handleKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = (e) => {
-    if (!menuOpen) return;
+    if (!menuOpen) {
+      // While a turn is in flight assistant-ui blocks Enter-to-send (the
+      // external-store runtime has no native queue). Allow it anyway —
+      // the message is persisted and the backend answers it on the next
+      // turn. Skip during IME composition (Android keystroke-drop bug).
+      if (
+        isRunning &&
+        e.key === "Enter" &&
+        !e.shiftKey &&
+        !e.nativeEvent.isComposing
+      ) {
+        e.preventDefault();
+        void aui.thread().composer().send();
+      }
+      return;
+    }
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setActiveIndex((i) => (i + 1) % matches.length);
@@ -272,16 +287,40 @@ type ComposerActionProps = {
   onRunCommand: (name: string) => void | Promise<void>;
 };
 
+// Three pulsing dots shown beside the send button while a turn runs, so
+// the composer signals "assistant busy — your next message will queue"
+// without taking away the ability to send.
+const ComposerWorkingDots: FC = () => {
+  return (
+    <span
+      className="aui-composer-working flex items-center gap-1 pe-1 text-muted-foreground"
+      role="status"
+      aria-label="Assistant is working"
+    >
+      <span className="size-1.5 animate-pulse rounded-full bg-current" />
+      <span className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:150ms]" />
+      <span className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:300ms]" />
+    </span>
+  );
+};
+
 const ComposerAction: FC<ComposerActionProps> = ({
   menuOpen,
   matches,
   activeIndex,
   onRunCommand,
 }) => {
+  const aui = useAui();
+  // Gate the send button on emptiness only — never on isRunning. A send
+  // mid-run persists and queues for the next turn (the imperative
+  // `composer().send()` skips the runtime's run-state gate).
+  const isEmpty = useAuiState((s) => s.composer.isEmpty);
+  const isRunning = useAuiState((s) => s.thread.isRunning);
   return (
     <div className="aui-composer-action-wrapper relative flex items-center justify-between">
       <ComposerAddAttachment />
-      <AuiIf condition={(s) => !s.thread.isRunning}>
+      <div className="flex items-center gap-1.5">
+        {isRunning && <ComposerWorkingDots />}
         {menuOpen ? (
           <TooltipIconButton
             tooltip="Run command"
@@ -299,12 +338,21 @@ const ComposerAction: FC<ComposerActionProps> = ({
             <ArrowUpIcon className="aui-composer-send-icon size-4" />
           </TooltipIconButton>
         ) : (
-          <ComposerPrimitive.Send render={<TooltipIconButton tooltip="Send message" side="bottom" type="button" variant="default" size="icon" className="aui-composer-send size-8 rounded-full" aria-label="Send message" />}><ArrowUpIcon className="aui-composer-send-icon size-4" /></ComposerPrimitive.Send>
+          <TooltipIconButton
+            tooltip={isRunning ? "Send — queues for the next reply" : "Send message"}
+            side="bottom"
+            type="button"
+            variant="default"
+            size="icon"
+            className="aui-composer-send size-8 rounded-full"
+            aria-label={isRunning ? "Queue message" : "Send message"}
+            disabled={isEmpty}
+            onClick={() => void aui.thread().composer().send()}
+          >
+            <ArrowUpIcon className="aui-composer-send-icon size-4" />
+          </TooltipIconButton>
         )}
-      </AuiIf>
-      <AuiIf condition={(s) => s.thread.isRunning}>
-        <ComposerPrimitive.Cancel render={<Button type="button" variant="default" size="icon" className="aui-composer-cancel size-8 rounded-full" aria-label="Stop generating" />}><SquareIcon className="aui-composer-cancel-icon size-3 fill-current" /></ComposerPrimitive.Cancel>
-      </AuiIf>
+      </div>
     </div>
   );
 };
@@ -382,6 +430,30 @@ const AssistantActionBar: FC = () => {
   );
 };
 
+// Badges a user message that was sent while the assistant was already
+// busy. It is persisted and will be answered on the next turn; this tells
+// the user it's waiting rather than dropped.
+const QueuedBadge: FC = () => {
+  const queued = useAuiState((s) => {
+    const meta = s.message.metadata as
+      | { queued?: unknown; custom?: { queued?: unknown } }
+      | undefined;
+    return meta?.custom?.queued === true || meta?.queued === true;
+  });
+  if (!queued) return null;
+  return (
+    <div className="aui-user-queued col-start-2 -mt-1 flex justify-end">
+      <span
+        className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground"
+        role="status"
+      >
+        <span className="size-1.5 animate-pulse rounded-full bg-current" />
+        Queued
+      </span>
+    </div>
+  );
+};
+
 const UserMessage: FC = () => {
   return (
     <MessagePrimitive.Root
@@ -399,6 +471,8 @@ const UserMessage: FC = () => {
           <UserActionBar />
         </div>
       </div>
+
+      <QueuedBadge />
 
       <BranchPicker
         data-slot="aui_user-branch-picker"

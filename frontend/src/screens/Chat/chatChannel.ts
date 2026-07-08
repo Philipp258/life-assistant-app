@@ -10,7 +10,12 @@
 // and the server replies with a fresh snapshot per session.
 
 export type ChatWireEvent =
-  | { type: "snapshot"; session_id: number; messages: unknown[] }
+  | {
+      type: "snapshot";
+      session_id: number;
+      messages: unknown[];
+      is_running?: boolean;
+    }
   | { type: "message_upsert"; session_id: number; message: unknown }
   | { type: "message_delete"; session_id: number; id: string | number }
   | { type: "task_upsert"; session_id: number; task_id: number; task: unknown }
